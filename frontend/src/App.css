@@ -9,21 +9,22 @@ body {
   height: 80vh;
   display: flex;
   justify-content: center;
+  align-items: center;
   padding: 40px 20px;
   margin-left: 10rem;
 }
 
 .card {
-  width: 51.25rem;
-  height: 100%;
+  width: 52rem;
+  height: 85vh;
   background: #1a1d21;
   padding: 28px;
-  border-radius: 6px;
+  border-radius: 10px;
   border: 1px solid #2a2f36;
   display: flex;
   flex-direction: column;
-  margin-top: -2rem;
 }
+
 h1 {
   margin: 0;
   font-size: 22px;
@@ -38,11 +39,11 @@ h1 {
 }
 
 textarea {
-  width: 97%;
-  height: 90px;
+  width: 100%;
+  height: 100px;
   margin-top: 18px;
   padding: 12px;
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid #2a2f36;
   background: #111315;
   color: #e5e7eb;
@@ -63,35 +64,36 @@ textarea:focus {
   margin-top: 16px;
 }
 
-.mode-toggle {
+/* NEW DROPDOWN GROUP */
+.dropdown-group {
   display: flex;
-  gap: 6px;
+  gap: 12px;
 }
 
-.mode-toggle button {
-  padding: 6px 12px;
-  border-radius: 6px;
+.dropdown {
+  padding: 7px 12px;
+  border-radius: 8px;
   border: 1px solid #2a2f36;
-  background: #1a1d21;
+  background: #111315;
   color: #e5e7eb;
-  cursor: pointer;
   font-size: 12px;
-  transition: all 0.2s ease;
+  cursor: pointer;
+  transition: border 0.2s ease, background 0.2s ease;
 }
 
-.mode-toggle button.active {
-  border-color: #3b82f6;
-  background: #162133;
-  color: #ffffff;
-}
-
-.mode-toggle button:hover {
+.dropdown:hover {
   border-color: #4b5563;
 }
 
+.dropdown:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+/* RUN BUTTON */
 .run-btn {
-  padding: 7px 16px;
-  border-radius: 6px;
+  padding: 8px 18px;
+  border-radius: 8px;
   border: 1px solid #3b82f6;
   background: #3b82f6;
   color: white;
@@ -119,7 +121,7 @@ textarea:focus {
   margin-top: 20px;
   background: #0f1113;
   padding: 18px;
-  border-radius: 6px;
+  border-radius: 8px;
   border: 1px solid #2a2f36;
   flex: 1;
   overflow-y: auto;
@@ -127,7 +129,47 @@ textarea:focus {
 
 pre {
   white-space: pre-wrap;
-  line-height: 1.5;
+  line-height: 1.6;
+  font-size: 13px;
+  color: #d1d5db;
+}
+
+/* -------- REASONING PIPELINE -------- */
+
+.steps-container {
+  margin-top: 15px;
+  border: 1px solid #2a2f36;
+  border-radius: 8px;
+  background: #15181c;
+}
+
+.steps-header {
+  padding: 10px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #2a2f36;
+  color: #9ca3af;
+  user-select: none;
+}
+
+.steps-header:hover {
+  background: #1c2127;
+}
+
+.steps-content {
+  padding: 12px 14px;
   font-size: 12px;
   color: #d1d5db;
+}
+
+.step-block {
+  margin-bottom: 12px;
+}
+
+.step-block pre {
+  background: #0f1113;
+  padding: 10px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 11px;
 }

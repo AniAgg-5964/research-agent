@@ -10,7 +10,7 @@ const ai = new GoogleGenAI({
 });
 
 // ----------------------
-// RETRY WRAPPER (Fix 503)
+// RETRY WRAPPER
 // ----------------------
 async function callModelWithRetry(config, retries = 3) {
   for (let i = 0; i < retries; i++) {
@@ -27,15 +27,113 @@ async function callModelWithRetry(config, retries = 3) {
 }
 
 // ----------------------
+// PERSONA SYSTEM
+// ----------------------
+function getPersonaInstruction(persona) {
+
+  // =========================
+  // SYSTEMS ARCHITECT
+  // =========================
+  if (persona === "architect") {
+    return `
+You are a senior distributed systems architect.
+
+STRICT RULES:
+- Focus on architecture layers and control-plane/data-plane separation.
+- Discuss infrastructure constraints.
+- Mention scaling bottlenecks and real-world failure modes.
+- Include performance trade-offs.
+- Include observability strategy.
+- Mention infrastructure-level cost trade-offs (NOT business ROI).
+- Avoid academic research framing.
+- Avoid startup strategy language.
+
+Tone: Technical, operational, pragmatic.
+Structure:
+Architecture Overview →
+Control & Data Plane →
+Scaling Mechanics →
+Bottlenecks →
+Operational Risks →
+Deployment Considerations.
+`;
+  }
+
+  // =========================
+  // RESEARCH ANALYST
+  // =========================
+  if (persona === "analyst") {
+    return `
+You are a research analyst writing a structured technical survey.
+
+STRICT RULES:
+- Frame using theoretical models.
+- Reference formal systems concepts (CAP theorem, consensus models, complexity).
+- Compare approaches academically.
+- Discuss limitations and open research questions.
+- Use conceptual abstraction instead of operational tuning.
+- Avoid DevOps advice.
+- Avoid cost or ROI language.
+- Avoid startup framing.
+
+Tone: Formal, structured, analytical.
+Structure:
+Theoretical Framing →
+Comparative Models →
+Formal Trade-offs →
+Limitations →
+Research Gaps →
+Future Directions.
+`;
+  }
+
+  // =========================
+  // STRATEGY LEAD
+  // =========================
+  if (persona === "strategist") {
+    return `
+You are a technology strategy lead preparing an executive briefing.
+
+STRICT RULES:
+- Focus on competitive advantage.
+- Include ROI and operational cost implications.
+- Discuss hiring and ecosystem maturity.
+- Mention vendor lock-in risks.
+- Include adoption complexity.
+- Avoid low-level system internals.
+- Avoid distributed systems theory.
+- Avoid academic jargon.
+
+Tone: Strategic, executive-facing, outcome-driven.
+Structure:
+Business Context →
+Market Position →
+Cost & Scaling Implications →
+Talent & Ecosystem →
+Risks →
+Strategic Recommendation.
+`;
+  }
+
+  // default fallback
+  return getPersonaInstruction("architect");
+}
+
+// ----------------------
 // QUICK MODE
 // ----------------------
-async function runQuickResearch(query) {
+async function runQuickResearch(query, persona = "architect") {
+
+  const personaInstruction = getPersonaInstruction(persona);
+
   const response = await callModelWithRetry({
     model: "models/gemini-2.5-flash-lite",
     contents: `
-You are a senior research engineer.
-Provide a high-signal structured technical answer.
-Be concise and practical (max 600 words).
+You are a high-performance research assistant.
+
+${personaInstruction}
+
+Provide a concise but structured response (max 600 words).
 
 Query:
 ${query}
@@ -51,9 +149,10 @@ ${query}
 // ----------------------
 // DEEP MODE
 // ----------------------
-async function runDeepResearch(query, memoryContext = "") {
+async function runDeepResearch(query, memoryContext = "", persona = "architect") {
 
-  // Limit memory injection (VERY IMPORTANT)
+  const personaInstruction = getPersonaInstruction(persona);
+
   const safeMemory = memoryContext
     ? memoryContext.substring(0, 3000)
     : "";
@@ -64,11 +163,13 @@ async function runDeepResearch(query, memoryContext = "") {
     contents: `
 You are a research planner.
 
-Break down the following research question into:
-- Core technical themes
-- Subtopics to analyze
-- Important comparison axes
-- Potential failure cases
+${personaInstruction}
+
+Break the research question into:
+- Core themes
+- Comparative axes
+- Risk dimensions
+- Failure scenarios
 
 Be structured and concise.
 
@@ -80,74 +181,62 @@ ${query}
   const analysis = analysisResponse.text;
 
   // ----------------------
-  // TOOL EXECUTION (PARALLEL)
+  // TOOL EXECUTION
   // ----------------------
   let webResults = [];
-let arxivResults = [];
-let githubResults = [];
+  let arxivResults = [];
+  let githubResults = [];
 
-// Only run tools if memory is weak
-if (!safeMemory || safeMemory.length < 500) {
+  if (!safeMemory || safeMemory.length < 500) {
+    console.log("Running external tools...");
+    [webResults, arxivResults, githubResults] =
+      await Promise.all([
+        searchWeb(query),
+        searchArxiv(query),
+        searchGitHub(query),
+      ]);
+  } else {
+    console.log("Skipping tools (strong memory found)");
+  }
 
-  console.log("Running external tools...");
-
-  [webResults, arxivResults, githubResults] =
-    await Promise.all([
-      searchWeb(query),
-      searchArxiv(query),
-      searchGitHub(query),
-    ]);
-
-} else {
-
-  console.log("Skipping external tools (strong memory found)");
-
-}
-  // Limit each tool output
   const safeWeb = webResults.slice(0, 3);
   const safeArxiv = arxivResults.slice(0, 3);
   const safeGithub = githubResults.slice(0, 3);
 
   const toolContext = `
-Web Results:
-${safeWeb.map(r => `- ${r.title}: ${r.snippet} (${r.url})`).join("\n")}
+Web:
+${safeWeb.map(r => `- ${r.title}: ${r.snippet}`).join("\n")}
 
-arXiv Papers:
-${safeArxiv.map(p => `- ${p.title}: ${p.summary} (${p.url})`).join("\n")}
+arXiv:
+${safeArxiv.map(p => `- ${p.title}`).join("\n")}
 
-GitHub Repositories:
-${safeGithub.map(g => `- ${g.name} (${g.stars}⭐): ${g.description} (${g.url})`).join("\n")}
+GitHub:
+${safeGithub.map(g => `- ${g.name} (${g.stars}⭐)`).join("\n")}
 `;
 
   // STEP 2 — FINAL REPORT
   const finalResponse = await callModelWithRetry({
     model: "models/gemini-2.5-flash-lite",
     contents: `
-You are a senior research engineer assistant.
+You are a senior research assistant.
 
-Using the analytical breakdown:
+${personaInstruction}
+
+Use:
+
+Analytical Breakdown:
 ${analysis}
 
-Relevant past research context (if any):
+Memory Context:
 ${safeMemory}
 
-External Live Research Data:
+External Research:
 ${toolContext}
 
-Generate a production-grade structured research report.
+Generate a structured report.
 
-Strict structure:
-
-1. Executive Summary
-2. Key Approaches
-3. Trade-offs
-4. Implementation Considerations
-5. Benchmarks / Numbers (if available)
-6. Failure Modes
-7. Practical Recommendations
-8. Confidence Score (0-100%)
-
-Be concise but technical.
+End with:
+Confidence Score (0–100%)
 
 Research Question:
 ${query}
@@ -155,13 +244,21 @@ ${query}
   });
 
   return {
-    answer: finalResponse.text,
-    usage: {
-      totalTokenCount:
-        (analysisResponse.usageMetadata?.totalTokenCount || 0) +
-        (finalResponse.usageMetadata?.totalTokenCount || 0),
-    },
-  };
+  answer: finalResponse.text,
+  usage: {
+    totalTokenCount:
+      (analysisResponse.usageMetadata?.totalTokenCount || 0) +
+      (finalResponse.usageMetadata?.totalTokenCount || 0),
+  },
+  reasoning: {
+    analysis,
+    toolSummary: {
+      webCount: safeWeb.length,
+      arxivCount: safeArxiv.length,
+      githubCount: safeGithub.length,
+    }
+  }
+};
 }
 
 module.exports = {

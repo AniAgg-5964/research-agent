@@ -5,7 +5,7 @@ const { storeMemory, searchMemory } = require("../services/memoryService");
 
 router.post("/", async (req, res) => {
   try {
-    const { query, mode } = req.body;
+    const { query, mode, persona } = req.body;
 
     if (!query) {
       return res.status(400).json({ error: "Query is required" });
@@ -40,7 +40,7 @@ router.post("/", async (req, res) => {
   console.log("Memory injected length:", memoryText.length);
   
   // 2️⃣ Run deep research with memory
-  aiResponse = await runDeepResearch(query, memoryText);
+  aiResponse = await runDeepResearch(query, memoryText,persona);
 
   // 3️⃣ Generate summary for storage
   const summaryResponse = await runQuickResearch(
@@ -57,13 +57,14 @@ router.post("/", async (req, res) => {
     }
   );
 } else {
-      aiResponse = await runQuickResearch(query);
+      aiResponse = await runQuickResearch(query,persona);
     }
 
     res.json({
       answer: aiResponse.answer,
       usage: aiResponse.usage,
-      mode: mode || "quick"
+      mode: mode || "quick",
+      reasoning: aiResponse.reasoning || null
     });
 
   } catch (error) {
