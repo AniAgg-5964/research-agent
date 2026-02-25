@@ -1,19 +1,41 @@
 const { GoogleGenAI } = require("@google/genai");
+const {
+  searchWeb,
+  searchArxiv,
+  searchGitHub,
+} = require("./toolsService");
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
 // ----------------------
+// RETRY WRAPPER (Fix 503)
+// ----------------------
+async function callModelWithRetry(config, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await ai.models.generateContent(config);
+    } catch (err) {
+      if ((err.status === 503 || err.status === 429) && i < retries - 1) {
+        await new Promise(res => setTimeout(res, 2000));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
+// ----------------------
 // QUICK MODE
 // ----------------------
 async function runQuickResearch(query) {
-  const response = await ai.models.generateContent({
+  const response = await callModelWithRetry({
     model: "models/gemini-2.5-flash-lite",
     contents: `
 You are a senior research engineer.
 Provide a high-signal structured technical answer.
-Be concise and practical.
+Be concise and practical (max 600 words).
 
 Query:
 ${query}
@@ -31,8 +53,13 @@ ${query}
 // ----------------------
 async function runDeepResearch(query, memoryContext = "") {
 
-  // STEP 1: Analysis
-  const analysisResponse = await ai.models.generateContent({
+  // Limit memory injection (VERY IMPORTANT)
+  const safeMemory = memoryContext
+    ? memoryContext.substring(0, 3000)
+    : "";
+
+  // STEP 1 — ANALYSIS
+  const analysisResponse = await callModelWithRetry({
     model: "models/gemini-2.5-flash-lite",
     contents: `
 You are a research planner.
@@ -43,6 +70,8 @@ Break down the following research question into:
 - Important comparison axes
 - Potential failure cases
 
+Be structured and concise.
+
 Research Question:
 ${query}
 `,
@@ -50,21 +79,64 @@ ${query}
 
   const analysis = analysisResponse.text;
 
-  // STEP 2: Structured Report
-  const finalResponse = await ai.models.generateContent({
+  // ----------------------
+  // TOOL EXECUTION (PARALLEL)
+  // ----------------------
+  let webResults = [];
+let arxivResults = [];
+let githubResults = [];
+
+// Only run tools if memory is weak
+if (!safeMemory || safeMemory.length < 500) {
+
+  console.log("Running external tools...");
+
+  [webResults, arxivResults, githubResults] =
+    await Promise.all([
+      searchWeb(query),
+      searchArxiv(query),
+      searchGitHub(query),
+    ]);
+
+} else {
+
+  console.log("Skipping external tools (strong memory found)");
+
+}
+  // Limit each tool output
+  const safeWeb = webResults.slice(0, 3);
+  const safeArxiv = arxivResults.slice(0, 3);
+  const safeGithub = githubResults.slice(0, 3);
+
+  const toolContext = `
+Web Results:
+${safeWeb.map(r => `- ${r.title}: ${r.snippet} (${r.url})`).join("\n")}
+
+arXiv Papers:
+${safeArxiv.map(p => `- ${p.title}: ${p.summary} (${p.url})`).join("\n")}
+
+GitHub Repositories:
+${safeGithub.map(g => `- ${g.name} (${g.stars}⭐): ${g.description} (${g.url})`).join("\n")}
+`;
+
+  // STEP 2 — FINAL REPORT
+  const finalResponse = await callModelWithRetry({
     model: "models/gemini-2.5-flash-lite",
     contents: `
 You are a senior research engineer assistant.
 
-Using the following analytical breakdown:
+Using the analytical breakdown:
 ${analysis}
 
 Relevant past research context (if any):
-${memoryContext}
+${safeMemory}
+
+External Live Research Data:
+${toolContext}
 
 Generate a production-grade structured research report.
 
-Strictly follow this structure:
+Strict structure:
 
 1. Executive Summary
 2. Key Approaches
@@ -74,6 +146,8 @@ Strictly follow this structure:
 6. Failure Modes
 7. Practical Recommendations
 8. Confidence Score (0-100%)
+
+Be concise but technical.
 
 Research Question:
 ${query}
