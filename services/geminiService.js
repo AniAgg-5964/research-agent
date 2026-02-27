@@ -1,17 +1,15 @@
+// services/geminiService.js
+
 const { GoogleGenAI } = require("@google/genai");
-const {
-  searchWeb,
-  searchArxiv,
-  searchGitHub,
-} = require("./toolsService");
+const { searchArxiv, searchGitHub } = require("./toolsService");
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
 });
 
-// ----------------------
-// RETRY WRAPPER
-// ----------------------
+// ===========================
+// Retry Wrapper
+// ===========================
 async function callModelWithRetry(config, retries = 3) {
   for (let i = 0; i < retries; i++) {
     try {
@@ -26,104 +24,72 @@ async function callModelWithRetry(config, retries = 3) {
   }
 }
 
-// ----------------------
-// PERSONA SYSTEM
-// ----------------------
+// ===========================
+// Persona System
+// ===========================
 function getPersonaInstruction(persona) {
-
-  // =========================
-  // SYSTEMS ARCHITECT
-  // =========================
   if (persona === "architect") {
     return `
 You are a senior distributed systems architect.
 
-STRICT RULES:
-- Focus on architecture layers and control-plane/data-plane separation.
-- Discuss infrastructure constraints.
-- Mention scaling bottlenecks and real-world failure modes.
-- Include performance trade-offs.
-- Include observability strategy.
-- Mention infrastructure-level cost trade-offs (NOT business ROI).
-- Avoid academic research framing.
-- Avoid startup strategy language.
+Focus on:
+- Architecture layers
+- Control-plane/data-plane separation
+- Infrastructure constraints
+- Scaling bottlenecks
+- Performance trade-offs
+- Observability strategy
+- Operational risks
 
-Tone: Technical, operational, pragmatic.
-Structure:
-Architecture Overview →
-Control & Data Plane →
-Scaling Mechanics →
-Bottlenecks →
-Operational Risks →
-Deployment Considerations.
+Avoid:
+- Academic survey framing
+- Startup ROI language
 `;
   }
 
-  // =========================
-  // RESEARCH ANALYST
-  // =========================
   if (persona === "analyst") {
     return `
 You are a research analyst writing a structured technical survey.
 
-STRICT RULES:
-- Frame using theoretical models.
-- Reference formal systems concepts (CAP theorem, consensus models, complexity).
-- Compare approaches academically.
-- Discuss limitations and open research questions.
-- Use conceptual abstraction instead of operational tuning.
-- Avoid DevOps advice.
-- Avoid cost or ROI language.
-- Avoid startup framing.
+Focus on:
+- Theoretical framing
+- Comparative models
+- Formal trade-offs
+- System limitations
+- Research gaps
+- Future directions
 
-Tone: Formal, structured, analytical.
-Structure:
-Theoretical Framing →
-Comparative Models →
-Formal Trade-offs →
-Limitations →
-Research Gaps →
-Future Directions.
+Avoid:
+- DevOps tuning advice
+- Business or ROI language
 `;
   }
 
-  // =========================
-  // STRATEGY LEAD
-  // =========================
   if (persona === "strategist") {
     return `
 You are a technology strategy lead preparing an executive briefing.
 
-STRICT RULES:
-- Focus on competitive advantage.
-- Include ROI and operational cost implications.
-- Discuss hiring and ecosystem maturity.
-- Mention vendor lock-in risks.
-- Include adoption complexity.
-- Avoid low-level system internals.
-- Avoid distributed systems theory.
-- Avoid academic jargon.
+Focus on:
+- Competitive advantage
+- ROI implications
+- Cost structure
+- Talent ecosystem
+- Vendor lock-in risk
+- Adoption complexity
 
-Tone: Strategic, executive-facing, outcome-driven.
-Structure:
-Business Context →
-Market Position →
-Cost & Scaling Implications →
-Talent & Ecosystem →
-Risks →
-Strategic Recommendation.
+Avoid:
+- Low-level system internals
+- Distributed systems theory
 `;
   }
 
-  // default fallback
   return getPersonaInstruction("architect");
 }
 
-// ----------------------
+// ===========================
 // QUICK MODE
-// ----------------------
+// ===========================
 async function runQuickResearch(query, persona = "architect") {
-
   const personaInstruction = getPersonaInstruction(persona);
 
   const response = await callModelWithRetry({
@@ -133,7 +99,7 @@ You are a high-performance research assistant.
 
 ${personaInstruction}
 
-Provide a concise but structured response (max 600 words).
+Provide a concise structured answer (max 600 words).
 
 Query:
 ${query}
@@ -146,18 +112,17 @@ ${query}
   };
 }
 
-// ----------------------
+// ===========================
 // DEEP MODE
-// ----------------------
+// ===========================
 async function runDeepResearch(query, memoryContext = "", persona = "architect") {
-
   const personaInstruction = getPersonaInstruction(persona);
 
   const safeMemory = memoryContext
     ? memoryContext.substring(0, 3000)
     : "";
 
-  // STEP 1 — ANALYSIS
+  // STEP 1 — Analytical Breakdown
   const analysisResponse = await callModelWithRetry({
     model: "models/gemini-2.5-flash-lite",
     contents: `
@@ -171,8 +136,6 @@ Break the research question into:
 - Risk dimensions
 - Failure scenarios
 
-Be structured and concise.
-
 Research Question:
 ${query}
 `,
@@ -180,41 +143,31 @@ ${query}
 
   const analysis = analysisResponse.text;
 
-  // ----------------------
-  // TOOL EXECUTION
-  // ----------------------
-  let webResults = [];
+  // ===========================
+  // Tool Execution
+  // ===========================
   let arxivResults = [];
   let githubResults = [];
 
   if (!safeMemory || safeMemory.length < 500) {
     console.log("Running external tools...");
-    [webResults, arxivResults, githubResults] =
-      await Promise.all([
-        searchWeb(query),
-        searchArxiv(query),
-        searchGitHub(query),
-      ]);
+    [arxivResults, githubResults] = await Promise.all([
+      searchArxiv(query),
+      searchGitHub(query),
+    ]);
   } else {
     console.log("Skipping tools (strong memory found)");
   }
 
-  const safeWeb = webResults.slice(0, 3);
-  const safeArxiv = arxivResults.slice(0, 3);
-  const safeGithub = githubResults.slice(0, 3);
-
   const toolContext = `
-Web:
-${safeWeb.map(r => `- ${r.title}: ${r.snippet}`).join("\n")}
+arXiv Papers:
+${arxivResults.map(p => `- ${p.title}`).join("\n")}
 
-arXiv:
-${safeArxiv.map(p => `- ${p.title}`).join("\n")}
-
-GitHub:
-${safeGithub.map(g => `- ${g.name} (${g.stars}⭐)`).join("\n")}
+GitHub Repositories:
+${githubResults.map(g => `- ${g.name} (${g.stars}⭐)`).join("\n")}
 `;
 
-  // STEP 2 — FINAL REPORT
+  // STEP 2 — Final Report
   const finalResponse = await callModelWithRetry({
     model: "models/gemini-2.5-flash-lite",
     contents: `
@@ -244,21 +197,20 @@ ${query}
   });
 
   return {
-  answer: finalResponse.text,
-  usage: {
-    totalTokenCount:
-      (analysisResponse.usageMetadata?.totalTokenCount || 0) +
-      (finalResponse.usageMetadata?.totalTokenCount || 0),
-  },
-  reasoning: {
-    analysis,
-    toolSummary: {
-      webCount: safeWeb.length,
-      arxivCount: safeArxiv.length,
-      githubCount: safeGithub.length,
-    }
-  }
-};
+    answer: finalResponse.text,
+    usage: {
+      totalTokenCount:
+        (analysisResponse.usageMetadata?.totalTokenCount || 0) +
+        (finalResponse.usageMetadata?.totalTokenCount || 0),
+    },
+    reasoning: {
+      analysis,
+      toolSummary: {
+        arxivCount: arxivResults.length,
+        githubCount: githubResults.length,
+      },
+    },
+  };
 }
 
 module.exports = {
