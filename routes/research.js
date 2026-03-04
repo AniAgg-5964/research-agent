@@ -15,49 +15,49 @@ router.post("/", async (req, res) => {
 
     if (mode === "deep") {
 
-  // 1️⃣ Search similar past research
-  const pastMemories = await searchMemory(query);
+      // 1️⃣ Search similar past research
+      const pastMemories = await searchMemory(query);
 
-  console.log("Raw retrieved memories:", pastMemories.map(m => ({
-  score: m.score
-})));
+      console.log(
+        "Raw retrieved memories:",
+        pastMemories.map(m => ({ score: m.score }))
+      );
 
-  let memoryText = "";
-  const SIMILARITY_THRESHOLD = 0.75;
+      let memoryText = "";
+      const SIMILARITY_THRESHOLD = 0.75;
 
-  const filteredMemories = pastMemories.filter(
-    m => m.score >= SIMILARITY_THRESHOLD
-  );
+      const filteredMemories = pastMemories.filter(
+        m => m.score >= SIMILARITY_THRESHOLD
+      );
 
-  if (filteredMemories.length > 0) {
-    memoryText = filteredMemories
-      .map(m => m.payload.fullReport)
-      .join("\n\n");
-  }
+      if (filteredMemories.length > 0) {
+        // 🔥 IMPORTANT: inject stored summaries, NOT full reports
+        memoryText = filteredMemories
+          .map(m => m.payload.summary)
+          .join("\n\n");
+      }
 
-  console.log("Filtered memories count:", filteredMemories.length);
+      console.log("Filtered memories count:", filteredMemories.length);
+      console.log("Memory injected length:", memoryText.length);
 
-  console.log("Memory injected length:", memoryText.length);
-  
-  // 2️⃣ Run deep research with memory
-  aiResponse = await runDeepResearch(query, memoryText,persona);
+      // 2️⃣ Run deep research (this already generates memorySummary internally)
+      aiResponse = await runDeepResearch(query, memoryText, persona);
 
-  // 3️⃣ Generate summary for storage
-  const summaryResponse = await runQuickResearch(
-    `Summarize the following research in 5-6 concise bullet points:\n\n${aiResponse.answer}`
-  );
+      // 3️⃣ Store compressed summary embedding + full report payload
+      if (aiResponse.memorySummary) {
+        await storeMemory(
+          Date.now(),
+          aiResponse.memorySummary, // 🔥 store compressed summary embedding
+          {
+            query,
+            summary: aiResponse.memorySummary,
+            fullReport: aiResponse.answer
+          }
+        );
+      }
 
-  // 4️⃣ Store summary embedding + full report payload
-  await storeMemory(
-    Date.now(),
-    summaryResponse.answer,
-    {
-      query,
-      fullReport: aiResponse.answer
-    }
-  );
-} else {
-      aiResponse = await runQuickResearch(query,persona);
+    } else {
+      aiResponse = await runQuickResearch(query, persona);
     }
 
     res.json({

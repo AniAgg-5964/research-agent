@@ -122,19 +122,37 @@ async function runDeepResearch(query, memoryContext = "", persona = "architect")
     ? memoryContext.substring(0, 3000)
     : "";
 
-  // STEP 1 — Analytical Breakdown
+  console.log("LLM CALL 1 — ANALYSIS");
+
   const analysisResponse = await callModelWithRetry({
     model: "models/gemini-2.5-flash-lite",
     contents: `
-You are a research planner.
+You are a research planning agent.
 
 ${personaInstruction}
 
-Break the research question into:
-- Core themes
-- Comparative axes
-- Risk dimensions
-- Failure scenarios
+Analyze the research question and produce a structured plan.
+
+  Return ONLY valid JSON.
+
+  Do not include explanations.
+  Do not include markdown.
+  Do not include text before or after the JSON.
+
+  Format:
+
+  {
+    "themes": [],
+    "comparison_axes": [],
+    "risks": [],
+    "needs_arxiv": true,
+    "needs_github": true
+  }
+
+Rules:
+- Use arXiv if academic research papers are useful.
+- Use GitHub if implementation examples or open-source systems are useful.
+- If existing memory is sufficient, tools may be false.
 
 Research Question:
 ${query}
@@ -143,31 +161,69 @@ ${query}
 
   const analysis = analysisResponse.text;
 
+  let plan;
+
+try {
+  const cleaned = analysis
+    .replace(/```json/g, "")
+    .replace(/```/g, "")
+    .trim();
+
+  plan = JSON.parse(cleaned);
+
+} catch (err) {
+  console.log("Plan parse failed, fallback mode");
+  plan = {
+    needs_arxiv: true,
+    needs_github: true
+  };
+}
+
+console.log("Agent Plan:", plan);
+
   // ===========================
   // Tool Execution
   // ===========================
   let arxivResults = [];
   let githubResults = [];
 
-  if (!safeMemory || safeMemory.length < 500) {
+  if (plan.needs_arxiv || plan.needs_github) {
     console.log("Running external tools...");
-    [arxivResults, githubResults] = await Promise.all([
-      searchArxiv(query),
-      searchGitHub(query),
-    ]);
+
+    const toolTasks = [];
+
+    if (plan.needs_arxiv) {
+      toolTasks.push(searchArxiv(query));
+    } else {
+      toolTasks.push(Promise.resolve([]));
+    }
+
+    if (plan.needs_github) {
+      toolTasks.push(searchGitHub(query));
+    } else {
+      toolTasks.push(Promise.resolve([]));
+    }
+
+    [arxivResults, githubResults] = await Promise.all(toolTasks);
+
   } else {
-    console.log("Skipping tools (strong memory found)");
+    console.log("Agent decided no tools required");
   }
 
   const toolContext = `
-arXiv Papers:
-${arxivResults.map(p => `- ${p.title}`).join("\n")}
+  arXiv Papers:
+  ${arxivResults.length
+    ? arxivResults.map(p => `- ${p.title}`).join("\n")
+    : "No relevant papers found"}
 
-GitHub Repositories:
-${githubResults.map(g => `- ${g.name} (${g.stars}⭐)`).join("\n")}
-`;
+  GitHub Repositories:
+  ${githubResults.length
+    ? githubResults.map(g => `- ${g.name} (${g.stars}⭐)`).join("\n")
+    : "No relevant repositories found"}
+  `;
 
-  // STEP 2 — Final Report
+  console.log("LLM CALL 2 — FINAL REPORT");
+
   const finalResponse = await callModelWithRetry({
     model: "models/gemini-2.5-flash-lite",
     contents: `
@@ -196,20 +252,36 @@ ${query}
 `,
   });
 
+  console.log("LLM CALL 3 — MEMORY COMPRESSION");
+
+  const summaryResponse = await callModelWithRetry({
+    model: "models/gemini-2.5-flash-lite",
+    contents: `
+Summarize the following research into 5–6 high-signal bullet points.
+Focus only on durable insights.
+Avoid verbosity.
+
+${finalResponse.text}
+`,
+  });
+
   return {
     answer: finalResponse.text,
+    memorySummary: summaryResponse.text,
     usage: {
       totalTokenCount:
         (analysisResponse.usageMetadata?.totalTokenCount || 0) +
-        (finalResponse.usageMetadata?.totalTokenCount || 0),
+        (finalResponse.usageMetadata?.totalTokenCount || 0) +
+        (summaryResponse.usageMetadata?.totalTokenCount || 0),
     },
     reasoning: {
-      analysis,
-      toolSummary: {
-        arxivCount: arxivResults.length,
-        githubCount: githubResults.length,
-      },
-    },
+  analysis,
+  plan,
+  toolSummary: {
+    arxivCount: arxivResults.length,
+    githubCount: githubResults.length
+  }
+}
   };
 }
 

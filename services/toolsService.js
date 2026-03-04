@@ -27,8 +27,10 @@ async function searchArxiv(query) {
     return entries.map(entry => {
       const title =
         entry.match(/<title>([\s\S]*?)<\/title>/)?.[1]?.trim() || "";
+
       const summary =
         entry.match(/<summary>([\s\S]*?)<\/summary>/)?.[1]?.trim() || "";
+
       const id =
         entry.match(/<id>([\s\S]*?)<\/id>/)?.[1]?.trim() || "";
 
@@ -38,6 +40,7 @@ async function searchArxiv(query) {
         url: id,
       };
     });
+
   } catch (err) {
     console.error("arXiv search error:", err.message);
     return [];
@@ -51,11 +54,20 @@ async function searchGitHub(query) {
   try {
     console.log("Running GitHub search...");
 
+    // Clean query so GitHub API doesn't reject it
+    const githubQuery = query
+      .replace(/[^\w\s]/g, "")
+      .split(" ")
+      .slice(0, 6)
+      .join(" ");
+
+    console.log("GitHub query:", githubQuery);
+
     const response = await axios.get(
       "https://api.github.com/search/repositories",
       {
         params: {
-          q: query,
+          q: githubQuery,
           sort: "stars",
           order: "desc",
           per_page: 3,
@@ -74,6 +86,7 @@ async function searchGitHub(query) {
       stars: repo.stargazers_count,
       url: repo.html_url,
     }));
+
   } catch (err) {
     console.error("GitHub search error:", err.message);
     return [];
