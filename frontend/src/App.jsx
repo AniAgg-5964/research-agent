@@ -8,266 +8,266 @@ import rehypeKatex from "rehype-katex";
 
 function App() {
 
-  const [query, setQuery] = useState("");
-  const [mode, setMode] = useState("deep");
-  const [persona, setPersona] = useState("architect");
+const [query,setQuery]=useState("");
+const [mode,setMode]=useState("deep");
+const [persona,setPersona]=useState("architect");
 
-  const [response, setResponse] = useState("");
-  const [usage, setUsage] = useState(null);
-  const [reasoning, setReasoning] = useState(null);
+const [response,setResponse]=useState("");
+const [usage,setUsage]=useState(null);
+const [reasoning,setReasoning]=useState(null);
 
-  const [loading, setLoading] = useState(false);
+const [loading,setLoading]=useState(false);
 
-  const [showSteps, setShowSteps] = useState(false);
+const [showSteps,setShowSteps]=useState(false);
 
-  // clarification state
-  const [clarificationNeeded, setClarificationNeeded] = useState(false);
-  const [questions, setQuestions] = useState([]);
-  const [answers, setAnswers] = useState([]);
+// clarification state
+const [clarificationNeeded,setClarificationNeeded]=useState(false);
+const [questions,setQuestions]=useState([]);
+const [answers,setAnswers]=useState([]);
 
-  const runResearch = async (finalQuery = query) => {
+const runResearch=async(finalQuery=query)=>{
 
-    if (!finalQuery.trim()) return;
+if(!finalQuery.trim())return;
 
-    setLoading(true);
-    setResponse("");
-    setUsage(null);
-    setReasoning(null);
+setLoading(true);
+setResponse("");
+setUsage(null);
+setReasoning(null);
 
-    try {
+try{
 
-      const res = await fetch("http://localhost:5000/research", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          query: finalQuery,
-          mode,
-          persona
-        })
-      });
+const res=await fetch("http://localhost:5000/research",{
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+query:finalQuery,
+mode,
+persona
+})
+});
 
-      const data = await res.json();
+const data=await res.json();
 
-      // ---------------------------
-      // CLARIFICATION MODE
-      // ---------------------------
-      if (data.clarificationNeeded) {
+// clarification mode
+if(data.clarificationNeeded){
 
-        setClarificationNeeded(true);
-        setQuestions(data.questions || []);
-        setAnswers(new Array(data.questions.length).fill(""));
+setClarificationNeeded(true);
+setQuestions(data.questions||[]);
+setAnswers(new Array(data.questions.length).fill(""));
 
-        setLoading(false);
-        return;
-      }
+setLoading(false);
+return;
+}
 
-      // ---------------------------
-      // NORMAL RESPONSE
-      // ---------------------------
+// normal response
+setClarificationNeeded(false);
 
-      setClarificationNeeded(false);
+setResponse(data.answer||data.error);
+setUsage(data.usage||null);
+setReasoning(data.reasoning||null);
 
-      setResponse(data.answer || data.error);
-      setUsage(data.usage || null);
-      setReasoning(data.reasoning || null);
+}catch(err){
 
-    } catch (err) {
-      setResponse("Error connecting to backend.");
-    }
+setResponse("Error connecting to backend.");
 
-    setLoading(false);
-  };
+}
 
-  // submit clarification answers
-  const submitClarifications = () => {
+setLoading(false);
+};
 
-    const clarificationText = questions
-      .map((q, i) => `${q}\nAnswer: ${answers[i]}`)
-      .join("\n\n");
+const submitClarifications=()=>{
 
-    const updatedQuery =
-      query +
-      "\n\nAdditional Clarifications:\n" +
-      clarificationText;
+const clarificationText=questions
+.map((q,i)=>`${q}\nAnswer: ${answers[i]}`)
+.join("\n\n");
 
-    setClarificationNeeded(false);
+const updatedQuery=
+query+
+"\n\nAdditional Clarifications:\n"+
+clarificationText;
 
-    runResearch(updatedQuery);
-  };
+setClarificationNeeded(false);
 
-  return (
-    <div className="app">
+runResearch(updatedQuery);
+};
 
-      <div className="card">
+return(
 
-        <h1>Research Agent</h1>
+<div className="app">
 
-        <p className="subtitle">
-          Memory-Augmented Deep Research Engine
-        </p>
+<div className="card">
 
-        {/* -------------------------
-            USER QUERY INPUT
-        -------------------------- */}
-
-        <textarea
-          placeholder="Enter your research query..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+<h1>Research Agent</h1>
 
-        {/* -------------------------
-            CONTROLS
-        -------------------------- */}
+<p className="subtitle">
+Memory-Augmented Deep Research Engine
+</p>
 
-        <div className="controls">
+<textarea
+placeholder="Enter your research query..."
+value={query}
+onChange={(e)=>setQuery(e.target.value)}
+/>
 
-          <div className="dropdown-group">
+<div className="controls">
 
-            <select
-              value={mode}
-              onChange={(e) => setMode(e.target.value)}
-              className="dropdown"
-            >
-              <option value="quick">Quick Analysis</option>
-              <option value="deep">Deep Research</option>
-            </select>
-
-            <select
-              value={persona}
-              onChange={(e) => setPersona(e.target.value)}
-              className="dropdown"
-            >
-              <option value="architect">Systems Architect</option>
-              <option value="analyst">Research Analyst</option>
-              <option value="strategist">Strategy Lead</option>
-            </select>
-
-          </div>
+<div className="dropdown-group">
 
-          <button className="run-btn" onClick={() => runResearch()}>
-            {loading ? "Analyzing..." : "Run Research"}
-          </button>
+<select
+value={mode}
+onChange={(e)=>setMode(e.target.value)}
+className="dropdown"
+>
+<option value="quick">Quick Analysis</option>
+<option value="deep">Deep Research</option>
+</select>
 
-        </div>
+<select
+value={persona}
+onChange={(e)=>setPersona(e.target.value)}
+className="dropdown"
+>
+<option value="architect">Systems Architect</option>
+<option value="analyst">Research Analyst</option>
+<option value="strategist">Strategy Lead</option>
+</select>
 
-        {/* -------------------------
-            CLARIFICATION QUESTIONS
-        -------------------------- */}
+</div>
 
-        {clarificationNeeded && (
+<button
+className="run-btn"
+onClick={()=>runResearch()}
+>
+{loading?"Analyzing...":"Run Research"}
+</button>
 
-          <div className="clarification-box">
+</div>
 
-            <h3>Agent needs clarification</h3>
+{clarificationNeeded&&(
 
-            {questions.map((q, i) => (
-              <div key={i} className="question-block">
+<div className="clarification-box">
 
-                <p>{q}</p>
+<h3>Agent needs clarification</h3>
 
-                <textarea
-                  value={answers[i]}
-                  onChange={(e) => {
-                    const updated = [...answers];
-                    updated[i] = e.target.value;
-                    setAnswers(updated);
-                  }}
-                  placeholder="Your answer..."
-                />
+{questions.map((q,i)=>(
 
-              </div>
-            ))}
+<div key={i} className="question-block">
 
-            <button className="run-btn" onClick={submitClarifications}>
-              Submit Clarifications
-            </button>
+<p>{q}</p>
 
-          </div>
-        )}
+<textarea
+value={answers[i]}
+onChange={(e)=>{
 
-        {/* -------------------------
-            TOKEN USAGE
-        -------------------------- */}
+const updated=[...answers];
+updated[i]=e.target.value;
+setAnswers(updated);
 
-        {usage && (
-          <div className="usage">
-            <span>Total Tokens: {usage.totalTokenCount}</span>
-          </div>
-        )}
+}}
+placeholder="Your answer..."
+/>
 
-        {/* -------------------------
-            REASONING PIPELINE
-        -------------------------- */}
+</div>
 
-        {mode === "deep" && reasoning && (
+))}
 
-          <div className="steps-container">
+<button
+className="run-btn"
+onClick={submitClarifications}
+>
+Submit Clarifications
+</button>
 
-            <div
-              className="steps-header"
-              onClick={() => setShowSteps(!showSteps)}
-            >
-              🔎 Research Pipeline {showSteps ? "▲" : "▼"}
-            </div>
+</div>
 
-            {showSteps && (
+)}
 
-              <div className="steps-content">
+{usage&&(
 
-                <div className="step-block">
-                  <strong>Step 1: Problem Decomposition</strong>
-                  <pre>{reasoning.analysis}</pre>
-                </div>
+<div className="usage">
+<span>Total Tokens: {usage.totalTokenCount}</span>
+</div>
 
-                <div className="step-block">
-                  <strong>Step 2: External Source Aggregation</strong>
-                  <p>
-                    arXiv Papers: {reasoning.toolSummary?.arxivCount || 0}
-                    <br />
-                    GitHub Repos: {reasoning.toolSummary?.githubCount || 0}
-                  </p>
-                </div>
+)}
 
-                <div className="step-block">
-                  <strong>Step 3: Structured Synthesis</strong>
-                  <p>
-                    Final structured report generated using memory +
-                    live sources + analytical breakdown.
-                  </p>
-                </div>
+{mode==="deep"&&reasoning&&(
 
-              </div>
+<div className="steps-container">
 
-            )}
+<div
+className="steps-header"
+onClick={()=>setShowSteps(!showSteps)}
+>
+🔎 Research Pipeline {showSteps?"▲":"▼"}
+</div>
 
-          </div>
+{showSteps&&(
 
-        )}
+<div className="steps-content">
 
-        {/* -------------------------
-            FINAL OUTPUT
-        -------------------------- */}
+<div className="step-block">
 
-        {response && (
+<strong>Step 1: Research Planning</strong>
 
-          <div className="output">
+<pre>{reasoning.planner}</pre>
 
-            <ReactMarkdown
-              remarkPlugins={[remarkMath]}
-              rehypePlugins={[rehypeKatex]}
-            >
-              {response}
-            </ReactMarkdown>
+</div>
 
-          </div>
+<div className="step-block">
 
-        )}
+<strong>Step 2: Tool Decision</strong>
 
-      </div>
+<p>
+arXiv Papers Retrieved: {reasoning.tools?.arxiv||0}
+<br/>
+GitHub Repositories Retrieved: {reasoning.tools?.github||0}
+</p>
 
-    </div>
-  );
+</div>
+
+<div className="step-block">
+
+<strong>Step 3: Research Synthesis</strong>
+
+<p>
+The agent combined:
+<br/>• Memory context
+<br/>• Planner reasoning
+<br/>• External research sources
+<br/>• Persona-guided analysis
+</p>
+
+</div>
+
+</div>
+
+)}
+
+</div>
+
+)}
+
+{response&&(
+
+<div className="output">
+
+<ReactMarkdown
+remarkPlugins={[remarkMath]}
+rehypePlugins={[rehypeKatex]}
+>
+{response}
+</ReactMarkdown>
+
+</div>
+
+)}
+
+</div>
+
+</div>
+
+);
+
 }
 
 export default App;

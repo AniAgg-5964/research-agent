@@ -134,18 +134,25 @@ ${query}
   console.log("LLM CALL 2 — Reflection Agent");
 
   const reflection = await runGroqPrompt(`
-You are a research critic.
+You are a critical research reviewer.
 
-Analyze the following research plan.
+Your job is to detect whether the research plan is missing critical
+information required to produce a high-quality answer.
 
-Identify:
-- missing information
-- clarification questions
+You MUST check for:
 
-Return JSON:
+- missing scale assumptions
+- missing infrastructure assumptions
+- missing domain context
+- missing constraints
+- missing performance targets
+
+If any of these are missing, you MUST ask clarification questions.
+
+Return ONLY JSON:
 
 {
- "needs_clarification": false,
+ "needs_clarification": true or false,
  "questions": []
 }
 
