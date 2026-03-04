@@ -27,6 +27,7 @@
     "dotenv": "^17.3.1",
     "duck-duck-scrape": "^2.2.7",
     "express": "^5.2.1",
+    "groq-sdk": "^0.37.0",
     "katex": "^0.16.33",
     "openai": "^6.24.0",
     "react-markdown": "^10.1.0",

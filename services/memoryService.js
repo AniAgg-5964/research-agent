@@ -12,8 +12,11 @@ const ai = new GoogleGenAI({
 
 const COLLECTION_NAME = "research_memory";
 
-// Initialize collection
+// =====================================================
+// Ensure Collection Exists
+// =====================================================
 async function initializeCollection() {
+
   const collections = await qdrant.getCollections();
 
   const exists = collections.collections.find(
@@ -21,30 +24,41 @@ async function initializeCollection() {
   );
 
   if (!exists) {
+
     await qdrant.createCollection(COLLECTION_NAME, {
       vectors: {
-        size: 3072,
+        size: 3072, // Gemini embedding size
         distance: "Cosine",
       },
     });
+
     console.log("Qdrant collection created.");
   }
+
 }
 
-// Generate embedding
+// =====================================================
+// Generate Embedding
+// =====================================================
 async function generateEmbedding(text) {
+
   const response = await ai.models.embedContent({
     model: "models/gemini-embedding-001",
     contents: text,
   });
 
-  // New SDK returns embeddings array
-  return response.embeddings[0].values;
-  console.log("Embedding size:", response.embeddings[0].values.length);
+  const vector = response.embeddings[0].values;
+
+  return vector;
 }
 
-// Store memory
+// =====================================================
+// Store Memory
+// =====================================================
 async function storeMemory(id, text, metadata = {}) {
+
+  await initializeCollection();
+
   const vector = await generateEmbedding(text);
 
   await qdrant.upsert(COLLECTION_NAME, {
@@ -56,10 +70,16 @@ async function storeMemory(id, text, metadata = {}) {
       },
     ],
   });
+
 }
 
-// Search memory
+// =====================================================
+// Search Memory
+// =====================================================
 async function searchMemory(query) {
+
+  await initializeCollection();
+
   const vector = await generateEmbedding(query);
 
   const results = await qdrant.search(COLLECTION_NAME, {

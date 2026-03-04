@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+
 const { runQuickResearch, runDeepResearch } = require("../services/geminiService");
 const { storeMemory, searchMemory } = require("../services/memoryService");
 
@@ -15,7 +16,9 @@ router.post("/", async (req, res) => {
 
     if (mode === "deep") {
 
-      // 1️⃣ Search similar past research
+      // ===========================
+      // 1️⃣ Search Similar Memory
+      // ===========================
       const pastMemories = await searchMemory(query);
 
       console.log(
@@ -23,15 +26,16 @@ router.post("/", async (req, res) => {
         pastMemories.map(m => ({ score: m.score }))
       );
 
-      let memoryText = "";
       const SIMILARITY_THRESHOLD = 0.75;
 
       const filteredMemories = pastMemories.filter(
         m => m.score >= SIMILARITY_THRESHOLD
       );
 
+      let memoryText = "";
+
       if (filteredMemories.length > 0) {
-        // 🔥 IMPORTANT: inject stored summaries, NOT full reports
+        // Inject stored summaries (not full reports)
         memoryText = filteredMemories
           .map(m => m.payload.summary)
           .join("\n\n");
@@ -40,14 +44,31 @@ router.post("/", async (req, res) => {
       console.log("Filtered memories count:", filteredMemories.length);
       console.log("Memory injected length:", memoryText.length);
 
-      // 2️⃣ Run deep research (this already generates memorySummary internally)
+      // ===========================
+      // 2️⃣ Run Deep Research
+      // ===========================
       aiResponse = await runDeepResearch(query, memoryText, persona);
 
-      // 3️⃣ Store compressed summary embedding + full report payload
+      // ===========================
+      // 3️⃣ Handle Clarification
+      // ===========================
+      if (aiResponse.clarificationNeeded) {
+        console.log("Agent requested clarification");
+
+        return res.json({
+          clarificationNeeded: true,
+          questions: aiResponse.questions,
+          reasoning: aiResponse.reasoning || null
+        });
+      }
+
+      // ===========================
+      // 4️⃣ Store Memory (Compressed)
+      // ===========================
       if (aiResponse.memorySummary) {
         await storeMemory(
           Date.now(),
-          aiResponse.memorySummary, // 🔥 store compressed summary embedding
+          aiResponse.memorySummary,
           {
             query,
             summary: aiResponse.memorySummary,
@@ -60,6 +81,9 @@ router.post("/", async (req, res) => {
       aiResponse = await runQuickResearch(query, persona);
     }
 
+    // ===========================
+    // 5️⃣ Return Final Response
+    // ===========================
     res.json({
       answer: aiResponse.answer,
       usage: aiResponse.usage,
@@ -69,6 +93,7 @@ router.post("/", async (req, res) => {
 
   } catch (error) {
     console.error("FULL ERROR:", error);
+
     res.status(500).json({
       error: "Something went wrong",
       details: error.message

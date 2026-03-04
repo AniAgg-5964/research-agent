@@ -2,6 +2,7 @@
 
 const { GoogleGenAI } = require("@google/genai");
 const { searchArxiv, searchGitHub } = require("./toolsService");
+const { runGroqPrompt } = require("./groqService");
 
 const ai = new GoogleGenAI({
   apiKey: process.env.GEMINI_API_KEY,
@@ -28,58 +29,26 @@ async function callModelWithRetry(config, retries = 3) {
 // Persona System
 // ===========================
 function getPersonaInstruction(persona) {
+
   if (persona === "architect") {
     return `
 You are a senior distributed systems architect.
-
-Focus on:
-- Architecture layers
-- Control-plane/data-plane separation
-- Infrastructure constraints
-- Scaling bottlenecks
-- Performance trade-offs
-- Observability strategy
-- Operational risks
-
-Avoid:
-- Academic survey framing
-- Startup ROI language
+Focus on architecture layers, scaling mechanics, performance trade-offs, and operational risks.
+Avoid business language.
 `;
   }
 
   if (persona === "analyst") {
     return `
-You are a research analyst writing a structured technical survey.
-
-Focus on:
-- Theoretical framing
-- Comparative models
-- Formal trade-offs
-- System limitations
-- Research gaps
-- Future directions
-
-Avoid:
-- DevOps tuning advice
-- Business or ROI language
+You are a research analyst producing structured technical surveys.
+Focus on theoretical framing, comparisons, and research gaps.
 `;
   }
 
   if (persona === "strategist") {
     return `
 You are a technology strategy lead preparing an executive briefing.
-
-Focus on:
-- Competitive advantage
-- ROI implications
-- Cost structure
-- Talent ecosystem
-- Vendor lock-in risk
-- Adoption complexity
-
-Avoid:
-- Low-level system internals
-- Distributed systems theory
+Focus on competitive advantage, ROI implications, and ecosystem maturity.
 `;
   }
 
@@ -90,16 +59,17 @@ Avoid:
 // QUICK MODE
 // ===========================
 async function runQuickResearch(query, persona = "architect") {
+
   const personaInstruction = getPersonaInstruction(persona);
 
   const response = await callModelWithRetry({
     model: "models/gemini-2.5-flash-lite",
     contents: `
-You are a high-performance research assistant.
+You are a research assistant.
 
 ${personaInstruction}
 
-Provide a concise structured answer (max 600 words).
+Provide a concise structured answer.
 
 Query:
 ${query}
@@ -108,7 +78,7 @@ ${query}
 
   return {
     answer: response.text,
-    usage: response.usageMetadata || null,
+    usage: response.usageMetadata || null
   };
 }
 
@@ -116,176 +86,245 @@ ${query}
 // DEEP MODE
 // ===========================
 async function runDeepResearch(query, memoryContext = "", persona = "architect") {
+
   const personaInstruction = getPersonaInstruction(persona);
 
   const safeMemory = memoryContext
     ? memoryContext.substring(0, 3000)
     : "";
 
-  console.log("LLM CALL 1 — ANALYSIS");
+  // ====================================================
+  // LLM CALL 1 — PLANNER (Gemini)
+  // ====================================================
 
-  const analysisResponse = await callModelWithRetry({
+  console.log("LLM CALL 1 — Research Planner");
+
+  const plannerResponse = await callModelWithRetry({
     model: "models/gemini-2.5-flash-lite",
     contents: `
 You are a research planning agent.
 
 ${personaInstruction}
 
-Analyze the research question and produce a structured plan.
+Break down the research question into:
 
-  Return ONLY valid JSON.
+- themes
+- comparison axes
+- risks
 
-  Do not include explanations.
-  Do not include markdown.
-  Do not include text before or after the JSON.
+Return ONLY JSON:
 
-  Format:
-
-  {
-    "themes": [],
-    "comparison_axes": [],
-    "risks": [],
-    "needs_arxiv": true,
-    "needs_github": true
-  }
-
-Rules:
-- Use arXiv if academic research papers are useful.
-- Use GitHub if implementation examples or open-source systems are useful.
-- If existing memory is sufficient, tools may be false.
+{
+ "themes": [],
+ "comparison_axes": [],
+ "risks": []
+}
 
 Research Question:
 ${query}
-`,
+`
   });
 
-  const analysis = analysisResponse.text;
+  const plannerOutput = plannerResponse.text;
 
-  let plan;
+  // ====================================================
+  // LLM CALL 2 — REFLECTION (Groq)
+  // ====================================================
 
-try {
-  const cleaned = analysis
-    .replace(/```json/g, "")
-    .replace(/```/g, "")
-    .trim();
+  console.log("LLM CALL 2 — Reflection Agent");
 
-  plan = JSON.parse(cleaned);
+  const reflection = await runGroqPrompt(`
+You are a research critic.
 
-} catch (err) {
-  console.log("Plan parse failed, fallback mode");
-  plan = {
-    needs_arxiv: true,
-    needs_github: true
-  };
+Analyze the following research plan.
+
+Identify:
+- missing information
+- clarification questions
+
+Return JSON:
+
+{
+ "needs_clarification": false,
+ "questions": []
 }
 
-console.log("Agent Plan:", plan);
+PLAN:
+${plannerOutput}
 
-  // ===========================
-  // Tool Execution
-  // ===========================
+USER QUERY:
+${query}
+`);
+
+  let reflectionPlan;
+
+  try {
+    reflectionPlan = JSON.parse(
+      reflection.replace(/```json/g,"").replace(/```/g,"").trim()
+    );
+  } catch {
+    reflectionPlan = {
+      needs_clarification:false,
+      questions:[]
+    };
+  }
+
+  if(reflectionPlan.needs_clarification){
+    return {
+      clarificationNeeded:true,
+      questions:reflectionPlan.questions,
+      reasoning:{ plannerOutput }
+    };
+  }
+
+  // ====================================================
+  // LLM CALL 3 — FINAL PLANNING + TOOL DECISION (Gemini)
+  // ====================================================
+
+  console.log("LLM CALL 3 — Final Planner + Tool Decision");
+
+  const finalPlanResponse = await callModelWithRetry({
+    model:"models/gemini-2.5-flash-lite",
+    contents:`
+You are a research planning agent.
+
+Given the plan below decide tool usage.
+
+Return JSON:
+
+{
+ "tool_plan":[
+   {"tool":"arxiv","confidence":0.0},
+   {"tool":"github","confidence":0.0}
+ ]
+}
+
+PLAN:
+${plannerOutput}
+
+Memory:
+${safeMemory}
+
+Query:
+${query}
+`
+  });
+
+  let finalPlan;
+
+  try{
+    finalPlan = JSON.parse(
+      finalPlanResponse.text.replace(/```json/g,"").replace(/```/g,"").trim()
+    );
+  }catch{
+    finalPlan = {
+      tool_plan:[
+        {tool:"arxiv",confidence:0.7},
+        {tool:"github",confidence:0.7}
+      ]
+    }
+  }
+
+  const TOOL_THRESHOLD = 0.6;
+
+  const arxivConfidence =
+    finalPlan.tool_plan?.find(t=>t.tool==="arxiv")?.confidence || 0;
+
+  const githubConfidence =
+    finalPlan.tool_plan?.find(t=>t.tool==="github")?.confidence || 0;
+
   let arxivResults = [];
   let githubResults = [];
 
-  if (plan.needs_arxiv || plan.needs_github) {
-    console.log("Running external tools...");
+  console.log("Tool Confidence:",{
+    arxiv:arxivConfidence,
+    github:githubConfidence
+  });
 
-    const toolTasks = [];
+  if(arxivConfidence>TOOL_THRESHOLD){
+    console.log("Executing arXiv search");
+    arxivResults = await searchArxiv(query);
+  }
 
-    if (plan.needs_arxiv) {
-      toolTasks.push(searchArxiv(query));
-    } else {
-      toolTasks.push(Promise.resolve([]));
-    }
-
-    if (plan.needs_github) {
-      toolTasks.push(searchGitHub(query));
-    } else {
-      toolTasks.push(Promise.resolve([]));
-    }
-
-    [arxivResults, githubResults] = await Promise.all(toolTasks);
-
-  } else {
-    console.log("Agent decided no tools required");
+  if(githubConfidence>TOOL_THRESHOLD){
+    console.log("Executing GitHub search");
+    githubResults = await searchGitHub(query);
   }
 
   const toolContext = `
-  arXiv Papers:
-  ${arxivResults.length
-    ? arxivResults.map(p => `- ${p.title}`).join("\n")
-    : "No relevant papers found"}
+arXiv:
+${arxivResults.map(p=>`- ${p.title}`).join("\n")}
 
-  GitHub Repositories:
-  ${githubResults.length
-    ? githubResults.map(g => `- ${g.name} (${g.stars}⭐)`).join("\n")
-    : "No relevant repositories found"}
-  `;
+GitHub:
+${githubResults.map(g=>`- ${g.name}`).join("\n")}
+`;
 
-  console.log("LLM CALL 2 — FINAL REPORT");
+  // ====================================================
+  // LLM CALL 4 — FINAL REPORT (Gemini)
+  // ====================================================
 
-  const finalResponse = await callModelWithRetry({
-    model: "models/gemini-2.5-flash-lite",
-    contents: `
+  console.log("LLM CALL 4 — Final Research Report");
+
+  const reportResponse = await callModelWithRetry({
+    model:"models/gemini-2.5-flash-lite",
+    contents:`
 You are a senior research assistant.
 
 ${personaInstruction}
 
 Use:
 
-Analytical Breakdown:
-${analysis}
-
 Memory Context:
 ${safeMemory}
+
+Planner Output:
+${plannerOutput}
 
 External Research:
 ${toolContext}
 
-Generate a structured report.
-
-End with:
-Confidence Score (0–100%)
-
 Research Question:
 ${query}
-`,
+
+Generate a structured research report.
+
+End with confidence score.
+`
   });
 
-  console.log("LLM CALL 3 — MEMORY COMPRESSION");
+  // ====================================================
+  // LLM CALL 5 — MEMORY COMPRESSION (Groq)
+  // ====================================================
 
-  const summaryResponse = await callModelWithRetry({
-    model: "models/gemini-2.5-flash-lite",
-    contents: `
-Summarize the following research into 5–6 high-signal bullet points.
-Focus only on durable insights.
-Avoid verbosity.
+  console.log("LLM CALL 5 — Memory Compression");
 
-${finalResponse.text}
-`,
-  });
+  const summary = await runGroqPrompt(`
+Summarize the research below into
+5 concise durable insights.
+
+${reportResponse.text}
+`);
 
   return {
-    answer: finalResponse.text,
-    memorySummary: summaryResponse.text,
-    usage: {
+    answer:reportResponse.text,
+    memorySummary:summary,
+    usage:{
       totalTokenCount:
-        (analysisResponse.usageMetadata?.totalTokenCount || 0) +
-        (finalResponse.usageMetadata?.totalTokenCount || 0) +
-        (summaryResponse.usageMetadata?.totalTokenCount || 0),
+        (plannerResponse.usageMetadata?.totalTokenCount||0)+
+        (reportResponse.usageMetadata?.totalTokenCount||0)
     },
-    reasoning: {
-  analysis,
-  plan,
-  toolSummary: {
-    arxivCount: arxivResults.length,
-    githubCount: githubResults.length
-  }
-}
+    reasoning:{
+      planner:plannerOutput,
+      tools:{
+        arxiv:arxivResults.length,
+        github:githubResults.length
+      }
+    }
   };
+
 }
 
 module.exports = {
   runQuickResearch,
-  runDeepResearch,
+  runDeepResearch
 };
