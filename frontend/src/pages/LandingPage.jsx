@@ -1,8 +1,10 @@
 import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import "./LandingPage.css";
 
 export default function LandingPage() {
     const navigate = useNavigate();
+    const [activeSection, setActiveSection] = useState("");
 
     const handleLaunch = () => {
         const token = localStorage.getItem("token");
@@ -13,19 +15,46 @@ export default function LandingPage() {
         }
     };
 
+    const scrollToSection = (id) => {
+        const element = document.getElementById(id);
+        if (element) {
+            element.scrollIntoView({ behavior: "smooth" });
+        }
+    };
+
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        setActiveSection(entry.target.id);
+                    }
+                });
+            },
+            { threshold: 0.5 }
+        );
+
+        const sections = document.querySelectorAll("section[id]");
+        sections.forEach((section) => observer.observe(section));
+
+        return () => {
+            sections.forEach((section) => observer.unobserve(section));
+        };
+    }, []);
+
     return (
         <div className="landing-page">
             <div className="container">
 
                 {/* NAVBAR */}
                 <nav className="navbar">
-                    <h2 className="logo">Cerebro</h2>
+                    <h2 className="logo">Mentis</h2>
 
                     <ul className="nav-links">
-                        <li>How it Works</li>
-                        <li>Features</li>
-                        <li>Use Cases</li>
-                        <li>Comparison</li>
+                        <li className={activeSection === "how-it-works" ? "active" : ""} onClick={() => scrollToSection("how-it-works")}>How it Works</li>
+                        <li className={activeSection === "features" ? "active" : ""} onClick={() => scrollToSection("features")}>Features</li>
+                        <li className={activeSection === "use-cases" ? "active" : ""} onClick={() => scrollToSection("use-cases")}>Use Cases</li>
+                        <li className={activeSection === "comparison" ? "active" : ""} onClick={() => scrollToSection("comparison")}>Comparison</li>
                     </ul>
 
                     <div className="nav-buttons">
@@ -42,19 +71,19 @@ export default function LandingPage() {
                     </h1>
 
                     <p>
-                        Move beyond simple chatbots. Cerebro is an intelligent workspace that
+                        Move beyond simple chatbots. Mentis is an intelligent workspace that
                         retrieves past knowledge, orchestrates tools, analyzes context,
                         and generates structured research reports.
                     </p>
 
                     <div className="hero-buttons">
                         <button className="start-btn" onClick={handleLaunch}>Start Research</button>
-                        <button className="outline-btn">See How It Works</button>
+                        <button className="outline-btn" onClick={() => scrollToSection("how-it-works")}>See How It Works</button>
                     </div>
                 </section>
 
                 {/* ENGINE SECTION */}
-                <section className="engine">
+                <section id="how-it-works" className="engine">
                     <h2>The Engine Inside</h2>
                     <p className="section-sub">
                         A transparent, multi-step reasoning process designed for deep intellectual work.
@@ -88,9 +117,9 @@ export default function LandingPage() {
                     </div>
                 </section>
 
-                {/* WHO IS CEREBRO FOR */}
-                <section className="who">
-                    <h2>Who is Cerebro For?</h2>
+                {/* WHO IS Mentis FOR */}
+                <section id="use-cases" className="who">
+                    <h2>Who is Mentis For?</h2>
                     <p className="section-sub">
                         Designed for professionals who need depth, accuracy, and structured knowledge.
                     </p>
@@ -116,10 +145,10 @@ export default function LandingPage() {
                 </section>
 
                 {/* FEATURES */}
-                <section className="features">
+                <section id="features" className="features">
                     <h2>Built for Serious Research</h2>
                     <p className="section-sub">
-                        Cerebro combines the flexibility of LLMs with the reliability of external tools and persistent storage.
+                        Mentis combines the flexibility of LLMs with the reliability of external tools and persistent storage.
                     </p>
 
                     <div className="feature-grid">
@@ -157,7 +186,7 @@ export default function LandingPage() {
                 </section>
 
                 {/* COMPARISON */}
-                <section className="comparison">
+                <section id="comparison" className="comparison">
                     <h2>Beyond the Chatbot</h2>
 
                     <div className="comparison-grid">
@@ -173,7 +202,7 @@ export default function LandingPage() {
                         </div>
 
                         <div className="compare-box blue">
-                            <h3>Cerebro Platform</h3>
+                            <h3>Mentis Platform</h3>
                             <ul>
                                 <li>Multi-step research</li>
                                 <li>Long-term memory</li>
@@ -188,7 +217,7 @@ export default function LandingPage() {
                 {/* CTA */}
                 <section className="cta">
                     <h2>Start Your First AI Research Session</h2>
-                    <p>Join professionals using Cerebro to accelerate research and knowledge discovery.</p>
+                    <p>Join professionals using Mentis to accelerate research and knowledge discovery.</p>
                     <button className="launch-btn big" onClick={handleLaunch}>Launch the Research Workspace</button>
                 </section>
 
@@ -196,7 +225,7 @@ export default function LandingPage() {
                 <footer className="footer">
                     <div className="footer-grid">
                         <div>
-                            <h3>Cerebro</h3>
+                            <h3>Mentis</h3>
                             <p>AI workspace for deep research and knowledge orchestration.</p>
                         </div>
                         <div>

@@ -45,7 +45,7 @@ export default function Login() {
         <div className="auth-page">
             <div className="auth-card">
                 <div className="auth-logo" onClick={() => navigate("/")}>
-                    Cerebro
+                    Mentis
                 </div>
 
                 <h1>Welcome Back</h1>

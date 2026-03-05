@@ -46,7 +46,7 @@ export default function Signup() {
         <div className="auth-page">
             <div className="auth-card">
                 <div className="auth-logo" onClick={() => navigate("/")}>
-                    Cerebro
+                    Mentis
                 </div>
 
                 <h1>Create Account</h1>
