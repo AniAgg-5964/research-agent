@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import "./App.css";
 import "katex/dist/katex.min.css";
 
@@ -6,11 +7,23 @@ import PipelineProgress from "./components/PipelineProgress";
 import QuickTake from "./components/QuickTake";
 import ReportViewer from "./components/ReportViewer";
 import NotesPanel from "./components/NotesPanel";
-import { FiCpu, FiMessageSquare, FiTrendingUp } from "react-icons/fi";
+import { FiCpu, FiMessageSquare, FiTrendingUp, FiLogOut, FiUser } from "react-icons/fi";
 
 const API_BASE = "http://localhost:5000/research";
 
 function ResearchWorkspace() {
+    const navigate = useNavigate();
+
+    // User profile
+    const storedUser = JSON.parse(localStorage.getItem("user") || "null");
+    const [profileOpen, setProfileOpen] = useState(false);
+
+    const handleLogout = () => {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        navigate("/login");
+    };
+
     // ==================
     // Core state
     // ==================
@@ -284,11 +297,42 @@ function ResearchWorkspace() {
             <div className="main-container">
                 {/* ---- Input Card ---- */}
                 <div className="input-card">
-                    <div className="brand">
-                        <div className="brand-icon"><FiCpu /></div>
-                        <div>
-                            <h1>Research Agent</h1>
-                            <p className="subtitle">Memory-Augmented Deep Research Engine</p>
+                    <div className="brand-row">
+                        <div className="brand">
+                            <div className="brand-icon"><FiCpu /></div>
+                            <div>
+                                <h1>Research Agent</h1>
+                                <p className="subtitle">Memory-Augmented Deep Research Engine</p>
+                            </div>
+                        </div>
+
+                        {/* User Profile */}
+                        <div className="user-profile">
+                            <button
+                                className="profile-btn"
+                                onClick={() => setProfileOpen(!profileOpen)}
+                                id="profile-toggle-btn"
+                            >
+                                <FiUser />
+                                <span>{storedUser?.name || "User"}</span>
+                            </button>
+
+                            {profileOpen && (
+                                <div className="profile-dropdown">
+                                    <div className="profile-info">
+                                        <div className="profile-avatar">
+                                            {(storedUser?.name || "U").charAt(0).toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <p className="profile-name">{storedUser?.name || "User"}</p>
+                                            <p className="profile-email">{storedUser?.email || ""}</p>
+                                        </div>
+                                    </div>
+                                    <button className="logout-btn" onClick={handleLogout}>
+                                        <FiLogOut /> Sign Out
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     </div>
 
