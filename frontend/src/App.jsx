@@ -654,11 +654,28 @@ function ResearchWorkspace() {
                             </div>
                         </div>
 
-                        {/* ---- Memory Context Indicator ---- */}
-                        {memoryCount !== null && !loading && (
-                            <div className="memory-indicator" style={{ textAlign: "center", fontSize: "0.85rem", color: "#666", marginBottom: "20px" }}>
-                                <strong>Memory Context</strong><br />
-                                {memoryCount} similar {memoryCount === 1 ? 'memory' : 'memories'} retrieved
+                        {/* ---- Meta Info (Tokens & Memory) ---- */}
+                        {!loading && (memoryCount !== null || usage) && (
+                            <div className="meta-info-bar" style={{
+                                display: "flex",
+                                justifyContent: "center",
+                                gap: "16px",
+                                fontSize: "0.75rem",
+                                color: "#9ca3af",
+                                marginTop: "4px",
+                                marginBottom: "16px",
+                                padding: "4px 12px",
+                                background: "rgba(0,0,0,0.02)",
+                                borderRadius: "12px",
+                                width: "fit-content",
+                                margin: "4px auto 16px auto"
+                            }}>
+                                {memoryCount !== null && (
+                                    <span title="Retrieved contextual memories">🧠 {memoryCount} {memoryCount === 1 ? 'memory' : 'memories'}</span>
+                                )}
+                                {usage && (
+                                    <span title="Total tokens used">⚡ {usage.totalTokenCount} tokens</span>
+                                )}
                             </div>
                         )}
 
@@ -706,12 +723,7 @@ function ResearchWorkspace() {
 
 
 
-                        {/* ---- Token Usage Indicator ---- */}
-                        {usage && !loading && (
-                            <div className="token-usage" style={{ textAlign: "center", fontSize: "0.85rem", color: "#888", marginBottom: "10px" }}>
-                                Tokens: {usage.totalTokenCount}
-                            </div>
-                        )}
+
 
                         {/* ---- Quick Take ---- */}
                         <QuickTake
