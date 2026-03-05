@@ -1,8 +1,10 @@
+import { FiSun, FiBookOpen, FiSearch, FiSettings } from "react-icons/fi";
+
 const ACTIONS = [
-    { key: "simplify", label: "Simplify", icon: "💡" },
-    { key: "explain", label: "Explain", icon: "📖" },
-    { key: "expand", label: "Expand", icon: "🔍" },
-    { key: "technical", label: "Technical Depth", icon: "⚙️" },
+    { key: "simplify", label: "Simplify", icon: <FiSun /> },
+    { key: "explain", label: "Explain", icon: <FiBookOpen /> },
+    { key: "expand", label: "Expand", icon: <FiSearch /> },
+    { key: "technical", label: "Technical Depth", icon: <FiSettings /> },
 ];
 
 export default function ReportActions({ onAction, loading, activeAction }) {

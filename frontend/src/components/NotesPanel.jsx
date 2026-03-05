@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { FiEdit3 } from "react-icons/fi";
 
 export default function NotesPanel({ isOpen, onToggle, query }) {
     const [notes, setNotes] = useState("");
@@ -40,7 +41,7 @@ export default function NotesPanel({ isOpen, onToggle, query }) {
                 id="notes-toggle-btn"
                 title="Research Notes"
             >
-                📝
+                <FiEdit3 />
             </button>
 
             <div className={`notes-panel ${isOpen ? "open" : ""}`}>

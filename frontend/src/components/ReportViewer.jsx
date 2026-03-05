@@ -5,6 +5,7 @@ import rehypeKatex from "rehype-katex";
 import ReportActions from "./ReportActions";
 import AcceptRejectBar from "./AcceptRejectBar";
 import TextSelectionToolbar from "./TextSelectionToolbar";
+import { FiFileText, FiEdit2 } from "react-icons/fi";
 
 export default function ReportViewer({
     isOpen,
@@ -40,7 +41,7 @@ export default function ReportViewer({
                             onClick={() => onExport("report")}
                             id="export-report-btn"
                         >
-                            📄 Export PDF
+                            <FiFileText className="inline-icon" /> Export PDF
                         </button>
                         <button className="report-close" onClick={onClose} id="close-report-btn">
                             ×
@@ -59,7 +60,7 @@ export default function ReportViewer({
                 {selectionResult && (
                     <div className="selection-result-bar">
                         <div className="srb-header">
-                            <span>✏️ Selection edit applied</span>
+                            <span><FiEdit2 className="inline-icon" /> Selection edit applied</span>
                             <div className="srb-actions">
                                 <button className="arb-accept" onClick={onAcceptSelection}>✓ Accept</button>
                                 <button className="arb-reject" onClick={onRejectSelection}>✗ Reject</button>

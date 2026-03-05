@@ -5,18 +5,30 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 /* ---- Reset & Base ---- */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
-html, body {
+html,
+body {
   min-height: 100%;
   background: #0a0c10;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   color: #e5e7eb;
   -webkit-font-smoothing: antialiased;
+}
+
+/* ---- Inline Icon Utility ---- */
+.inline-icon {
+  display: inline-block;
+  vertical-align: -0.15em;
+  width: 1em;
+  height: 1em;
+  margin-right: 4px;
 }
 
 /* ---- App Layout ---- */
@@ -187,7 +199,9 @@ textarea::placeholder {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ---- Button Variants ---- */
@@ -342,13 +356,29 @@ textarea::placeholder {
 }
 
 @keyframes pulse-glow {
-  0%, 100% { opacity: 1; box-shadow: 0 0 8px rgba(59, 130, 246, 0.4); }
-  50% { opacity: 0.5; box-shadow: 0 0 20px rgba(59, 130, 246, 0.6); }
+
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.4);
+  }
+
+  50% {
+    opacity: 0.5;
+    box-shadow: 0 0 20px rgba(59, 130, 246, 0.6);
+  }
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ========================================
@@ -766,7 +796,8 @@ textarea::placeholder {
   align-items: stretch;
 }
 
-.srb-original, .srb-modified {
+.srb-original,
+.srb-modified {
   flex: 1;
   padding: 10px 14px;
   border-radius: 8px;
@@ -779,16 +810,27 @@ textarea::placeholder {
   border: 1px solid rgba(239, 68, 68, 0.1);
 }
 
-.srb-original strong { color: #fca5a5; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.srb-original strong {
+  color: #fca5a5;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 
 .srb-modified {
   background: rgba(16, 185, 129, 0.06);
   border: 1px solid rgba(16, 185, 129, 0.1);
 }
 
-.srb-modified strong { color: #6ee7b7; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+.srb-modified strong {
+  color: #6ee7b7;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 
-.srb-original p, .srb-modified p {
+.srb-original p,
+.srb-modified p {
   margin-top: 6px;
   color: #d1d5db;
 }
@@ -851,7 +893,8 @@ textarea::placeholder {
   margin: 8px 0;
 }
 
-.report-content ul, .report-content ol {
+.report-content ul,
+.report-content ol {
   padding-left: 24px;
   margin: 8px 0;
 }
@@ -898,7 +941,8 @@ textarea::placeholder {
   margin: 12px 0;
 }
 
-.report-content th, .report-content td {
+.report-content th,
+.report-content td {
   border: 1px solid #1e2330;
   padding: 8px 14px;
   text-align: left;

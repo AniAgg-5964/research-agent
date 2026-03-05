@@ -1,6 +1,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import { FiZap, FiFileText } from "react-icons/fi";
 
 export default function QuickTake({ quickTake, onViewFullReport, onExport }) {
     if (!quickTake) return null;
@@ -8,7 +9,7 @@ export default function QuickTake({ quickTake, onViewFullReport, onExport }) {
     return (
         <div className="quick-take">
             <div className="quick-take-header">
-                <div className="quick-take-badge">⚡ Quick Take</div>
+                <div className="quick-take-badge"><FiZap className="inline-icon" /> Quick Take</div>
             </div>
             <div className="quick-take-content">
                 <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
@@ -20,7 +21,7 @@ export default function QuickTake({ quickTake, onViewFullReport, onExport }) {
                     View Full Report →
                 </button>
                 <button className="btn-ghost" onClick={() => onExport("quicktake")} id="export-quicktake-btn">
-                    📄 Export
+                    <FiFileText className="inline-icon" /> Export
                 </button>
             </div>
         </div>

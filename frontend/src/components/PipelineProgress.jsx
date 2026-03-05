@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
+import { FiCpu, FiBookOpen, FiGlobe, FiZap, FiCheck } from "react-icons/fi";
 
 const STAGES = [
-    { label: "Planning research...", icon: "🧠" },
-    { label: "Analyzing knowledge sources...", icon: "📚" },
-    { label: "Gathering external sources...", icon: "🌐" },
-    { label: "Synthesizing report...", icon: "✨" },
+    { label: "Planning research...", icon: <FiCpu /> },
+    { label: "Analyzing knowledge sources...", icon: <FiBookOpen /> },
+    { label: "Gathering external sources...", icon: <FiGlobe /> },
+    { label: "Synthesizing report...", icon: <FiZap /> },
 ];
 
 export default function PipelineProgress({ active }) {
@@ -35,14 +36,14 @@ export default function PipelineProgress({ active }) {
                     <div
                         key={i}
                         className={`pipeline-stage ${i < currentStage
-                                ? "completed"
-                                : i === currentStage
-                                    ? "active"
-                                    : "pending"
+                            ? "completed"
+                            : i === currentStage
+                                ? "active"
+                                : "pending"
                             }`}
                     >
                         <div className="stage-dot">
-                            {i < currentStage ? "✓" : stage.icon}
+                            {i < currentStage ? <FiCheck /> : stage.icon}
                         </div>
                         <span className="stage-label">{stage.label}</span>
                         {i < STAGES.length - 1 && (

@@ -7,7 +7,7 @@ const { runGroqPrompt } = require("../services/groqService");
 
 router.post("/", async (req, res) => {
   try {
-    const { query, mode, persona } = req.body;
+    const { query, mode, persona, clarificationDepth = 0 } = req.body;
 
     if (!query) {
       return res.status(400).json({ error: "Query is required" });
@@ -48,7 +48,7 @@ router.post("/", async (req, res) => {
       // ===========================
       // 2️⃣ Run Deep Research
       // ===========================
-      aiResponse = await runDeepResearch(query, memoryText, persona);
+      aiResponse = await runDeepResearch(query, memoryText, persona, clarificationDepth);
 
       // ===========================
       // 3️⃣ Handle Clarification

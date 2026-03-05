@@ -6,6 +6,7 @@ import PipelineProgress from "./components/PipelineProgress";
 import QuickTake from "./components/QuickTake";
 import ReportViewer from "./components/ReportViewer";
 import NotesPanel from "./components/NotesPanel";
+import { FiCpu, FiMessageSquare, FiTrendingUp } from "react-icons/fi";
 
 const API_BASE = "http://localhost:5000/research";
 
@@ -48,6 +49,7 @@ function App() {
     const [clarificationNeeded, setClarificationNeeded] = useState(false);
     const [questions, setQuestions] = useState([]);
     const [answers, setAnswers] = useState([]);
+    const [clarificationDepth, setClarificationDepth] = useState(0);
 
     // ==================
     // Research execution
@@ -63,11 +65,21 @@ function App() {
         setTransformResult(null);
         setSelectionResult(null);
 
+        // Reset depth if it's a completely new query (not a clarification submit)
+        if (finalQuery === query && clarificationDepth > 0) {
+            setClarificationDepth(0);
+        }
+
         try {
             const res = await fetch(API_BASE, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ query: finalQuery, mode, persona }),
+                body: JSON.stringify({
+                    query: finalQuery,
+                    mode,
+                    persona,
+                    clarificationDepth: finalQuery === query ? 0 : clarificationDepth
+                }),
             });
 
             const data = await res.json();
@@ -77,6 +89,7 @@ function App() {
                 setClarificationNeeded(true);
                 setQuestions(data.questions || []);
                 setAnswers(new Array(data.questions.length).fill(null));
+                setClarificationDepth(prev => prev + 1);
                 setLoading(false);
                 return;
             }
@@ -272,7 +285,7 @@ function App() {
                 {/* ---- Input Card ---- */}
                 <div className="input-card">
                     <div className="brand">
-                        <div className="brand-icon">🔬</div>
+                        <div className="brand-icon"><FiCpu /></div>
                         <div>
                             <h1>Research Agent</h1>
                             <p className="subtitle">Memory-Augmented Deep Research Engine</p>
@@ -349,7 +362,7 @@ function App() {
                 {/* ---- Clarification Questions ---- */}
                 {clarificationNeeded && (
                     <div className="clarification-box">
-                        <h3>🤔 Agent needs clarification</h3>
+                        <h3><FiMessageSquare className="inline-icon" /> Agent needs clarification</h3>
                         {questions.map((q, i) => (
                             <div key={i} className="question-block">
                                 <p>{q.question}</p>
@@ -380,7 +393,7 @@ function App() {
                 {/* ---- Usage ---- */}
                 {usage && (
                     <div className="usage">
-                        <span>📊 Total Tokens: {usage.totalTokenCount}</span>
+                        <span><FiTrendingUp className="inline-icon" /> Total Tokens: {usage.totalTokenCount}</span>
                     </div>
                 )}
 
@@ -388,7 +401,7 @@ function App() {
                 {mode === "deep" && reasoning && (
                     <div className="steps-container">
                         <div className="steps-header" onClick={() => setShowSteps(!showSteps)}>
-                            🔎 Research Pipeline {showSteps ? "▲" : "▼"}
+                            <FiCpu className="inline-icon" /> Research Pipeline {showSteps ? "▲" : "▼"}
                         </div>
                         {showSteps && (
                             <div className="steps-content">

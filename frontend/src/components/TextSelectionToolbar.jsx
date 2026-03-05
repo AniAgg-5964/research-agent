@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { FiEdit2, FiScissors, FiSearch, FiEdit3, FiMessageSquare } from "react-icons/fi";
 
 export default function TextSelectionToolbar({ containerRef, onTransform }) {
     const [visible, setVisible] = useState(false);
@@ -80,13 +81,13 @@ export default function TextSelectionToolbar({ containerRef, onTransform }) {
         >
             <div className="tst-buttons">
                 <button onClick={() => handleAction("rewrite")} className="tst-btn" id="tst-rewrite">
-                    ✏️ Rewrite
+                    <FiEdit2 className="inline-icon" /> Rewrite
                 </button>
                 <button onClick={() => handleAction("shorten")} className="tst-btn" id="tst-shorten">
-                    ✂️ Shorten
+                    <FiScissors className="inline-icon" /> Shorten
                 </button>
                 <button onClick={() => handleAction("clarify")} className="tst-btn" id="tst-clarify">
-                    🔎 Clarify
+                    <FiSearch className="inline-icon" /> Clarify
                 </button>
                 <button
                     onClick={() => {
@@ -99,14 +100,14 @@ export default function TextSelectionToolbar({ containerRef, onTransform }) {
                     className="tst-btn tst-copy"
                     id="tst-copy-notes"
                 >
-                    📝 Copy to Notes
+                    <FiEdit3 className="inline-icon" /> Copy to Notes
                 </button>
                 <button
                     onClick={() => setShowCustom(!showCustom)}
                     className={`tst-btn ${showCustom ? "active" : ""}`}
                     id="tst-custom-toggle"
                 >
-                    💬 Custom
+                    <FiMessageSquare className="inline-icon" /> Custom
                 </button>
             </div>
             {showCustom && (
