@@ -10,7 +10,7 @@ import { FiCpu, FiMessageSquare, FiTrendingUp } from "react-icons/fi";
 
 const API_BASE = "http://localhost:5000/research";
 
-function App() {
+function ResearchWorkspace() {
     // ==================
     // Core state
     // ==================
@@ -465,4 +465,4 @@ function App() {
     );
 }
 
-export default App;
+export default ResearchWorkspace;
