@@ -6,7 +6,7 @@ import "katex/dist/katex.min.css";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 
-function App() {
+function App(){
 
 const [query,setQuery]=useState("");
 const [mode,setMode]=useState("deep");
@@ -53,10 +53,11 @@ if(data.clarificationNeeded){
 
 setClarificationNeeded(true);
 setQuestions(data.questions||[]);
-setAnswers(new Array(data.questions.length).fill(""));
+setAnswers(new Array(data.questions.length).fill(null));
 
 setLoading(false);
 return;
+
 }
 
 // normal response
@@ -78,7 +79,7 @@ setLoading(false);
 const submitClarifications=()=>{
 
 const clarificationText=questions
-.map((q,i)=>`${q}\nAnswer: ${answers[i]}`)
+.map((q,i)=>`${q.question}\nSelected Option: ${answers[i]}`)
 .join("\n\n");
 
 const updatedQuery=
@@ -89,6 +90,7 @@ clarificationText;
 setClarificationNeeded(false);
 
 runResearch(updatedQuery);
+
 };
 
 return(
@@ -130,6 +132,7 @@ className="dropdown"
 <option value="architect">Systems Architect</option>
 <option value="analyst">Research Analyst</option>
 <option value="strategist">Strategy Lead</option>
+<option value="general">General User</option>
 </select>
 
 </div>
@@ -143,6 +146,10 @@ onClick={()=>runResearch()}
 
 </div>
 
+{/* ================================
+CLARIFICATION QUESTIONS (MCQ)
+================================ */}
+
 {clarificationNeeded&&(
 
 <div className="clarification-box">
@@ -153,19 +160,29 @@ onClick={()=>runResearch()}
 
 <div key={i} className="question-block">
 
-<p>{q}</p>
+<p>{q.question}</p>
 
-<textarea
-value={answers[i]}
-onChange={(e)=>{
+{q.options.map((option,j)=>(
 
+<label key={j} className="option-label">
+
+<input
+type="radio"
+name={`question-${i}`}
+value={option}
+checked={answers[i]===option}
+onChange={()=>{
 const updated=[...answers];
-updated[i]=e.target.value;
+updated[i]=option;
 setAnswers(updated);
-
 }}
-placeholder="Your answer..."
 />
+
+{option}
+
+</label>
+
+))}
 
 </div>
 
@@ -175,7 +192,7 @@ placeholder="Your answer..."
 className="run-btn"
 onClick={submitClarifications}
 >
-Submit Clarifications
+Submit Answers
 </button>
 
 </div>
@@ -189,6 +206,10 @@ Submit Clarifications
 </div>
 
 )}
+
+{/* ================================
+REASONING PIPELINE
+================================ */}
 
 {mode==="deep"&&reasoning&&(
 
@@ -247,6 +268,10 @@ The agent combined:
 
 )}
 
+{/* ================================
+FINAL OUTPUT
+================================ */}
+
 {response&&(
 
 <div className="output">
@@ -254,9 +279,10 @@ The agent combined:
 <ReactMarkdown
 remarkPlugins={[remarkMath]}
 rehypePlugins={[rehypeKatex]}
+
 >
-{response}
-</ReactMarkdown>
+
+{response} </ReactMarkdown>
 
 </div>
 

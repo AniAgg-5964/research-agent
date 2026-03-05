@@ -1,70 +1,96 @@
 // services/geminiService.js
 
 const { GoogleGenAI } = require("@google/genai");
-const { searchArxiv, searchGitHub } = require("./toolsService");
+const { searchWeb, searchArxiv, searchGitHub } = require("./toolsService");
 const { runGroqPrompt } = require("./groqService");
 
 const ai = new GoogleGenAI({
-  apiKey: process.env.GEMINI_API_KEY,
+apiKey: process.env.GEMINI_API_KEY,
 });
 
 // ===========================
 // Retry Wrapper
 // ===========================
-async function callModelWithRetry(config, retries = 3) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await ai.models.generateContent(config);
-    } catch (err) {
-      if ((err.status === 503 || err.status === 429) && i < retries - 1) {
-        await new Promise(res => setTimeout(res, 2000));
-      } else {
-        throw err;
-      }
-    }
-  }
+
+async function callModelWithRetry(config,retries=3){
+
+for(let i=0;i<retries;i++){
+
+try{
+
+return await ai.models.generateContent(config);
+
+}catch(err){
+
+if((err.status===503||err.status===429)&&i<retries-1){
+
+await new Promise(res=>setTimeout(res,2000));
+
+}else{
+throw err;
+}
+
+}
+
+}
+
 }
 
 // ===========================
 // Persona System
 // ===========================
-function getPersonaInstruction(persona) {
 
-  if (persona === "architect") {
-    return `
-You are a senior distributed systems architect.
-Focus on architecture layers, scaling mechanics, performance trade-offs, and operational risks.
-Avoid business language.
+function getPersonaInstruction(persona){
+
+if(persona==="architect"){
+return `You are a senior distributed systems architect.
+Focus on architecture layers, scaling mechanics,
+performance trade-offs and operational risks.
+Avoid business language.`;
+}
+
+if(persona==="analyst"){
+return `You are a research analyst producing structured
+technical surveys focusing on comparisons,
+theory and research gaps.`;
+}
+
+if(persona==="strategist"){
+return `
+You are a technology strategy lead preparing
+an executive briefing.
+
+Focus on ROI, ecosystem maturity and
+competitive advantage.
 `;
-  }
+}
 
-  if (persona === "analyst") {
-    return `
-You are a research analyst producing structured technical surveys.
-Focus on theoretical framing, comparisons, and research gaps.
+if(persona==="general"){
+return `
+You are an intelligent research assistant
+helping a general user.
+
+If details are missing,
+make reasonable assumptions
+instead of asking clarification questions.
 `;
-  }
+}
 
-  if (persona === "strategist") {
-    return `
-You are a technology strategy lead preparing an executive briefing.
-Focus on competitive advantage, ROI implications, and ecosystem maturity.
-`;
-  }
+return getPersonaInstruction("architect");
 
-  return getPersonaInstruction("architect");
 }
 
 // ===========================
 // QUICK MODE
 // ===========================
-async function runQuickResearch(query, persona = "architect") {
 
-  const personaInstruction = getPersonaInstruction(persona);
+async function runQuickResearch(query,persona="architect"){
 
-  const response = await callModelWithRetry({
-    model: "models/gemini-2.5-flash-lite",
-    contents: `
+const personaInstruction=getPersonaInstruction(persona);
+
+const response=await callModelWithRetry({
+model:"models/gemini-2.5-flash-lite",
+contents:`
 You are a research assistant.
 
 ${personaInstruction}
@@ -73,137 +99,175 @@ Provide a concise structured answer.
 
 Query:
 ${query}
-`,
-  });
+`
+});
 
-  return {
-    answer: response.text,
-    usage: response.usageMetadata || null
-  };
+return{
+answer:response.text,
+usage:response.usageMetadata||null
+};
+
 }
 
 // ===========================
 // DEEP MODE
 // ===========================
-async function runDeepResearch(query, memoryContext = "", persona = "architect") {
 
-  const personaInstruction = getPersonaInstruction(persona);
+async function runDeepResearch(
+query,
+memoryContext="",
+persona="architect",
+clarificationDepth=0
+){
 
-  const safeMemory = memoryContext
-    ? memoryContext.substring(0, 3000)
-    : "";
+const personaInstruction=getPersonaInstruction(persona);
 
-  // ====================================================
-  // LLM CALL 1 — PLANNER (Gemini)
-  // ====================================================
+const safeMemory=
+memoryContext?memoryContext.substring(0,3000):"";
 
-  console.log("LLM CALL 1 — Research Planner");
+const MAX_CLARIFICATION_DEPTH=1;
 
-  const plannerResponse = await callModelWithRetry({
-    model: "models/gemini-2.5-flash-lite",
-    contents: `
+// ====================================================
+// LLM CALL 1 — RESEARCH PLANNER
+// ====================================================
+
+console.log("LLM CALL 1 — Research Planner");
+
+const plannerResponse=await callModelWithRetry({
+model:"models/gemini-2.5-flash-lite",
+contents:`
 You are a research planning agent.
 
 ${personaInstruction}
 
 Break down the research question into:
 
-- themes
-- comparison axes
-- risks
+* themes
+* comparison_axes
+* risks
 
-Return ONLY JSON:
+Return JSON only:
 
 {
- "themes": [],
- "comparison_axes": [],
- "risks": []
+"themes":[],
+"comparison_axes":[],
+"risks":[]
 }
 
-Research Question:
+Query:
 ${query}
 `
-  });
+});
 
-  const plannerOutput = plannerResponse.text;
+const plannerOutput=plannerResponse.text;
 
-  // ====================================================
-  // LLM CALL 2 — REFLECTION (Groq)
-  // ====================================================
+// ====================================================
+// LLM CALL 2 — REFLECTION (Groq)
+// ====================================================
 
-  console.log("LLM CALL 2 — Reflection Agent");
+console.log("LLM CALL 2 — Reflection Agent");
 
-  const reflection = await runGroqPrompt(`
+const reflection=await runGroqPrompt(`
 You are a critical research reviewer.
 
-Your job is to detect whether the research plan is missing critical
-information required to produce a high-quality answer.
+Your job is to detect missing information.
 
-You MUST check for:
+If essential information is missing,
+generate multiple choice clarification questions.
 
-- missing scale assumptions
-- missing infrastructure assumptions
-- missing domain context
-- missing constraints
-- missing performance targets
+Rules:
 
-If any of these are missing, you MUST ask clarification questions.
+* Maximum 6 questions
+* Each question must contain 3–4 options
 
-Return ONLY JSON:
+Return JSON only:
 
 {
- "needs_clarification": true or false,
- "questions": []
+"needs_clarification":true or false,
+"questions":[
+{
+"question":"text",
+"options":["A","B","C"]
+}
+]
 }
 
 PLAN:
 ${plannerOutput}
 
-USER QUERY:
+QUERY:
 ${query}
 `);
 
-  let reflectionPlan;
+let reflectionPlan;
 
-  try {
-    reflectionPlan = JSON.parse(
-      reflection.replace(/```json/g,"").replace(/```/g,"").trim()
-    );
-  } catch {
-    reflectionPlan = {
-      needs_clarification:false,
-      questions:[]
-    };
-  }
+try{
 
-  if(reflectionPlan.needs_clarification){
-    return {
-      clarificationNeeded:true,
-      questions:reflectionPlan.questions,
-      reasoning:{ plannerOutput }
-    };
-  }
+reflectionPlan=JSON.parse(
+reflection.replace(/`json/g,"")
+.replace(/`/g,"")
+.trim()
+);
 
-  // ====================================================
-  // LLM CALL 3 — FINAL PLANNING + TOOL DECISION (Gemini)
-  // ====================================================
+}catch{
 
-  console.log("LLM CALL 3 — Final Planner + Tool Decision");
+reflectionPlan={
+needs_clarification:false,
+questions:[]
+};
 
-  const finalPlanResponse = await callModelWithRetry({
-    model:"models/gemini-2.5-flash-lite",
-    contents:`
-You are a research planning agent.
+}
 
-Given the plan below decide tool usage.
+// limit questions
+if(reflectionPlan.questions){
+reflectionPlan.questions=
+reflectionPlan.questions.slice(0,6);
+}
+
+// prevent infinite clarification loops
+if(
+persona!=="general" &&
+reflectionPlan.needs_clarification &&
+clarificationDepth<MAX_CLARIFICATION_DEPTH
+){
+
+return{
+clarificationNeeded:true,
+questions:reflectionPlan.questions,
+clarificationDepth:clarificationDepth+1,
+reasoning:{planner:plannerOutput}
+};
+
+}
+
+// ====================================================
+// LLM CALL 3 — TOOL DECISION
+// ====================================================
+
+console.log("LLM CALL 3 — Tool Planning");
+
+const finalPlanResponse=await callModelWithRetry({
+model:"models/gemini-2.5-flash-lite",
+contents:`
+You are a research planner.
+
+Decide which external sources
+are useful for answering the query.
+
+Available tools:
+
+tavily → general web knowledge
+arxiv → academic research papers
+github → open source implementations
 
 Return JSON:
 
 {
- "tool_plan":[
-   {"tool":"arxiv","confidence":0.0},
-   {"tool":"github","confidence":0.0}
- ]
+"tool_plan":[
+{"tool":"tavily","confidence":0.0},
+{"tool":"arxiv","confidence":0.0},
+{"tool":"github","confidence":0.0}
+]
 }
 
 PLAN:
@@ -215,66 +279,94 @@ ${safeMemory}
 Query:
 ${query}
 `
-  });
+});
 
-  let finalPlan;
+let finalPlan;
 
-  try{
-    finalPlan = JSON.parse(
-      finalPlanResponse.text.replace(/```json/g,"").replace(/```/g,"").trim()
-    );
-  }catch{
-    finalPlan = {
-      tool_plan:[
-        {tool:"arxiv",confidence:0.7},
-        {tool:"github",confidence:0.7}
-      ]
-    }
-  }
+try{
 
-  const TOOL_THRESHOLD = 0.6;
+finalPlan=JSON.parse(
+finalPlanResponse.text
+.replace(/`json/g,"")
+.replace(/`/g,"")
+.trim()
+);
 
-  const arxivConfidence =
-    finalPlan.tool_plan?.find(t=>t.tool==="arxiv")?.confidence || 0;
+}catch{
 
-  const githubConfidence =
-    finalPlan.tool_plan?.find(t=>t.tool==="github")?.confidence || 0;
+finalPlan={
+tool_plan:[
+{tool:"tavily",confidence:0.8},
+{tool:"arxiv",confidence:0.6},
+{tool:"github",confidence:0.6}
+]
+};
 
-  let arxivResults = [];
-  let githubResults = [];
+}
 
-  console.log("Tool Confidence:",{
-    arxiv:arxivConfidence,
-    github:githubConfidence
-  });
+const TOOL_THRESHOLD=0.6;
 
-  if(arxivConfidence>TOOL_THRESHOLD){
-    console.log("Executing arXiv search");
-    arxivResults = await searchArxiv(query);
-  }
+let webResults=[];
+let arxivResults=[];
+let githubResults=[];
 
-  if(githubConfidence>TOOL_THRESHOLD){
-    console.log("Executing GitHub search");
-    githubResults = await searchGitHub(query);
-  }
+const tavilyConfidence=
+finalPlan.tool_plan?.find(t=>t.tool==="tavily")?.confidence||0;
 
-  const toolContext = `
-arXiv:
+const arxivConfidence=
+finalPlan.tool_plan?.find(t=>t.tool==="arxiv")?.confidence||0;
+
+const githubConfidence=
+finalPlan.tool_plan?.find(t=>t.tool==="github")?.confidence||0;
+
+console.log("Tool Confidence:",{
+tavily:tavilyConfidence,
+arxiv:arxivConfidence,
+github:githubConfidence
+});
+
+// execute tools
+
+if(tavilyConfidence>TOOL_THRESHOLD){
+console.log("Executing Tavily search");
+webResults=await searchWeb(query);
+}
+
+if(arxivConfidence>TOOL_THRESHOLD){
+console.log("Executing arXiv search");
+arxivResults=await searchArxiv(query);
+}
+
+if(githubConfidence>TOOL_THRESHOLD){
+console.log("Executing GitHub search");
+githubResults=await searchGitHub(query);
+}
+
+// ====================================================
+// TOOL CONTEXT
+// ====================================================
+
+const toolContext=`
+
+Web Results:
+${webResults.map(r=>`- ${r.title}`).join("\n")}
+
+arXiv Papers:
 ${arxivResults.map(p=>`- ${p.title}`).join("\n")}
 
-GitHub:
+GitHub Repositories:
 ${githubResults.map(g=>`- ${g.name}`).join("\n")}
 `;
 
-  // ====================================================
-  // LLM CALL 4 — FINAL REPORT (Gemini)
-  // ====================================================
+// ====================================================
+// LLM CALL 4 — FINAL REPORT
+// ====================================================
 
-  console.log("LLM CALL 4 — Final Research Report");
+console.log("LLM CALL 4 — Final Research Report");
 
-  const reportResponse = await callModelWithRetry({
-    model:"models/gemini-2.5-flash-lite",
-    contents:`
+const reportResponse=await callModelWithRetry({
+model:"models/gemini-2.5-flash-lite",
+contents:`
 You are a senior research assistant.
 
 ${personaInstruction}
@@ -287,7 +379,7 @@ ${safeMemory}
 Planner Output:
 ${plannerOutput}
 
-External Research:
+External Sources:
 ${toolContext}
 
 Research Question:
@@ -297,41 +389,47 @@ Generate a structured research report.
 
 End with confidence score.
 `
-  });
+});
 
-  // ====================================================
-  // LLM CALL 5 — MEMORY COMPRESSION (Groq)
-  // ====================================================
+// ====================================================
+// LLM CALL 5 — MEMORY COMPRESSION
+// ====================================================
 
-  console.log("LLM CALL 5 — Memory Compression");
+console.log("LLM CALL 5 — Memory Compression");
 
-  const summary = await runGroqPrompt(`
+const summary=await runGroqPrompt(`
 Summarize the research below into
-5 concise durable insights.
+5 durable insights.
 
 ${reportResponse.text}
 `);
 
-  return {
-    answer:reportResponse.text,
-    memorySummary:summary,
-    usage:{
-      totalTokenCount:
-        (plannerResponse.usageMetadata?.totalTokenCount||0)+
-        (reportResponse.usageMetadata?.totalTokenCount||0)
-    },
-    reasoning:{
-      planner:plannerOutput,
-      tools:{
-        arxiv:arxivResults.length,
-        github:githubResults.length
-      }
-    }
-  };
+return{
+
+answer:reportResponse.text,
+
+memorySummary:summary,
+
+usage:{
+totalTokenCount:
+(plannerResponse.usageMetadata?.totalTokenCount||0)+
+(reportResponse.usageMetadata?.totalTokenCount||0)
+},
+
+reasoning:{
+planner:plannerOutput,
+tools:{
+web:webResults.length,
+arxiv:arxivResults.length,
+github:githubResults.length
+}
+}
+
+};
 
 }
 
-module.exports = {
-  runQuickResearch,
-  runDeepResearch
+module.exports={
+runQuickResearch,
+runDeepResearch
 };
