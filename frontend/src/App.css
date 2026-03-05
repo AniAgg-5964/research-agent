@@ -1070,7 +1070,7 @@ textarea::placeholder {
    TEXT SELECTION TOOLBAR
    ======================================== */
 .text-selection-toolbar {
-  position: absolute;
+  position: fixed;
   z-index: 1100;
   transform: translateX(-50%);
   animation: fadeIn 0.2s ease;

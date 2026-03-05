@@ -37,10 +37,11 @@ export default function TextSelectionToolbar({ containerRef, onTransform }) {
         const range = selection.getRangeAt(0);
         const rect = range.getBoundingClientRect();
 
+        // Use viewport-relative coords (fixed positioning inside fixed modal)
         setSelectedText(text);
         setPosition({
-            top: rect.top + window.scrollY - 50,
-            left: rect.left + window.scrollX + rect.width / 2,
+            top: rect.top - 50,
+            left: rect.left + rect.width / 2,
         });
         setVisible(true);
     }, [containerRef]);
