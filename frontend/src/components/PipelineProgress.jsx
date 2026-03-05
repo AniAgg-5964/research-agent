@@ -1,0 +1,63 @@
+import { useState, useEffect } from "react";
+
+const STAGES = [
+    { label: "Planning research...", icon: "🧠" },
+    { label: "Analyzing knowledge sources...", icon: "📚" },
+    { label: "Gathering external sources...", icon: "🌐" },
+    { label: "Synthesizing report...", icon: "✨" },
+];
+
+export default function PipelineProgress({ active }) {
+    const [currentStage, setCurrentStage] = useState(0);
+
+    useEffect(() => {
+        if (!active) {
+            setCurrentStage(0);
+            return;
+        }
+
+        const interval = setInterval(() => {
+            setCurrentStage((prev) => {
+                if (prev < STAGES.length - 1) return prev + 1;
+                return prev;
+            });
+        }, 3500);
+
+        return () => clearInterval(interval);
+    }, [active]);
+
+    if (!active) return null;
+
+    return (
+        <div className="pipeline-progress">
+            <div className="pipeline-track">
+                {STAGES.map((stage, i) => (
+                    <div
+                        key={i}
+                        className={`pipeline-stage ${i < currentStage
+                                ? "completed"
+                                : i === currentStage
+                                    ? "active"
+                                    : "pending"
+                            }`}
+                    >
+                        <div className="stage-dot">
+                            {i < currentStage ? "✓" : stage.icon}
+                        </div>
+                        <span className="stage-label">{stage.label}</span>
+                        {i < STAGES.length - 1 && (
+                            <div
+                                className={`stage-connector ${i < currentStage ? "filled" : ""
+                                    }`}
+                            />
+                        )}
+                    </div>
+                ))}
+            </div>
+            <div className="pipeline-pulse">
+                <div className="pulse-dot" />
+                <span>Agent is working...</span>
+            </div>
+        </div>
+    );
+}
