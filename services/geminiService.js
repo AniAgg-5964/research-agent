@@ -5,68 +5,65 @@ const { searchWeb, searchArxiv, searchGitHub } = require("./toolsService");
 const { runGroqPrompt } = require("./groqService");
 
 const ai = new GoogleGenAI({
-apiKey: process.env.GEMINI_API_KEY,
+    apiKey: process.env.GEMINI_API_KEY,
 });
 
 // ===========================
 // Retry Wrapper
 // ===========================
 
-async function callModelWithRetry(config,retries=3){
-
-for(let i=0;i<retries;i++){
-
-try{
-
-return await ai.models.generateContent(config);
-
-}catch(err){
-
-if((err.status===503||err.status===429)&&i<retries-1){
-
-await new Promise(res=>setTimeout(res,2000));
-
-}else{
-throw err;
-}
-
-}
-
-}
-
+async function callModelWithRetry(config, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await ai.models.generateContent(config);
+        } catch (err) {
+            if (i < retries - 1) {
+                const delay = (i === 0) ? 2000 : 4000; // 2s on attempt 2, 4s on attempt 3
+                console.warn(`LLM request failed (Attempt ${i + 1}/${retries}). Retrying in ${delay}ms...`, err.message);
+                await new Promise(res => setTimeout(res, delay));
+            } else {
+                console.error(`LLM request failed after ${retries} attempts:`, err.message);
+                // gracefully return an error message
+                return {
+                    text: `Error: Could not retrieve response after ${retries} attempts due to network or API issue.`,
+                    usageMetadata: null
+                };
+            }
+        }
+    }
 }
 
 // ===========================
 // Persona System
 // ===========================
 
-function getPersonaInstruction(persona){
+function getPersonaInstruction(persona) {
 
-if(persona==="architect"){
-return `You are a senior distributed systems architect.
+    if (persona === "architect") {
+        return `You are a senior distributed systems architect.
 Focus on architecture layers, scaling mechanics,
 performance trade-offs and operational risks.
 Avoid business language.`;
-}
+    }
 
-if(persona==="analyst"){
-return `You are a research analyst producing structured
+    if (persona === "analyst") {
+        return `You are a research analyst producing structured
 technical surveys focusing on comparisons,
 theory and research gaps.`;
-}
+    }
 
-if(persona==="strategist"){
-return `
+    if (persona === "strategist") {
+        return `
 You are a technology strategy lead preparing
 an executive briefing.
 
 Focus on ROI, ecosystem maturity and
 competitive advantage.
 `;
-}
+    }
 
-if(persona==="general"){
-return `
+    if (persona === "general") {
+        return `
 You are an intelligent research assistant
 helping a general user.
 
@@ -74,9 +71,9 @@ If details are missing,
 make reasonable assumptions
 instead of asking clarification questions.
 `;
-}
+    }
 
-return getPersonaInstruction("architect");
+    return getPersonaInstruction("architect");
 
 }
 
@@ -84,13 +81,13 @@ return getPersonaInstruction("architect");
 // QUICK MODE
 // ===========================
 
-async function runQuickResearch(query,persona="architect"){
+async function runQuickResearch(query, persona = "architect") {
 
-const personaInstruction=getPersonaInstruction(persona);
+    const personaInstruction = getPersonaInstruction(persona);
 
-const response=await callModelWithRetry({
-model:"models/gemini-2.5-flash-lite",
-contents:`
+    const response = await callModelWithRetry({
+        model: "models/gemini-2.5-flash-lite",
+        contents: `
 You are a research assistant.
 
 ${personaInstruction}
@@ -100,12 +97,12 @@ Provide a concise structured answer.
 Query:
 ${query}
 `
-});
+    });
 
-return{
-answer:response.text,
-usage:response.usageMetadata||null
-};
+    return {
+        answer: response.text,
+        usage: response.usageMetadata || null
+    };
 
 }
 
@@ -114,28 +111,28 @@ usage:response.usageMetadata||null
 // ===========================
 
 async function runDeepResearch(
-query,
-memoryContext="",
-persona="architect",
-clarificationDepth=0
-){
+    query,
+    memoryContext = "",
+    persona = "architect",
+    clarificationDepth = 0
+) {
 
-const personaInstruction=getPersonaInstruction(persona);
+    const personaInstruction = getPersonaInstruction(persona);
 
-const safeMemory=
-memoryContext?memoryContext.substring(0,3000):"";
+    const safeMemory =
+        memoryContext ? memoryContext.substring(0, 3000) : "";
 
-const MAX_CLARIFICATION_DEPTH=1;
+    const MAX_CLARIFICATION_DEPTH = 1;
 
-// ====================================================
-// LLM CALL 1 — RESEARCH PLANNER
-// ====================================================
+    // ====================================================
+    // LLM CALL 1 — RESEARCH PLANNER
+    // ====================================================
 
-console.log("LLM CALL 1 — Research Planner");
+    console.log("LLM CALL 1 — Research Planner");
 
-const plannerResponse=await callModelWithRetry({
-model:"models/gemini-2.5-flash-lite",
-contents:`
+    const plannerResponse = await callModelWithRetry({
+        model: "models/gemini-2.5-flash-lite",
+        contents: `
 You are a research planning agent.
 
 ${personaInstruction}
@@ -157,17 +154,17 @@ Return JSON only:
 Query:
 ${query}
 `
-});
+    });
 
-const plannerOutput=plannerResponse.text;
+    const plannerOutput = plannerResponse.text;
 
-// ====================================================
-// LLM CALL 2 — REFLECTION (Groq)
-// ====================================================
+    // ====================================================
+    // LLM CALL 2 — REFLECTION (Groq)
+    // ====================================================
 
-console.log("LLM CALL 2 — Reflection Agent");
+    console.log("LLM CALL 2 — Reflection Agent");
 
-const reflection=await runGroqPrompt(`
+    const reflection = await runGroqPrompt(`
 You are a critical research reviewer.
 
 Your job is to detect missing information.
@@ -199,56 +196,56 @@ QUERY:
 ${query}
 `);
 
-let reflectionPlan;
+    let reflectionPlan;
 
-try{
+    try {
 
-reflectionPlan=JSON.parse(
-reflection.replace(/`json/g,"")
-.replace(/`/g,"")
-.trim()
-);
+        reflectionPlan = JSON.parse(
+            reflection.replace(/`json/g, "")
+                .replace(/`/g, "")
+                .trim()
+        );
 
-}catch{
+    } catch {
 
-reflectionPlan={
-needs_clarification:false,
-questions:[]
-};
+        reflectionPlan = {
+            needs_clarification: false,
+            questions: []
+        };
 
-}
+    }
 
-// limit questions
-if(reflectionPlan.questions){
-reflectionPlan.questions=
-reflectionPlan.questions.slice(0,6);
-}
+    // limit questions
+    if (reflectionPlan.questions) {
+        reflectionPlan.questions =
+            reflectionPlan.questions.slice(0, 6);
+    }
 
-// prevent infinite clarification loops
-if(
-persona!=="general" &&
-reflectionPlan.needs_clarification &&
-clarificationDepth<MAX_CLARIFICATION_DEPTH
-){
+    // prevent infinite clarification loops
+    if (
+        persona !== "general" &&
+        reflectionPlan.needs_clarification &&
+        clarificationDepth < MAX_CLARIFICATION_DEPTH
+    ) {
 
-return{
-clarificationNeeded:true,
-questions:reflectionPlan.questions,
-clarificationDepth:clarificationDepth+1,
-reasoning:{planner:plannerOutput}
-};
+        return {
+            clarificationNeeded: true,
+            questions: reflectionPlan.questions,
+            clarificationDepth: clarificationDepth + 1,
+            reasoning: { planner: plannerOutput }
+        };
 
-}
+    }
 
-// ====================================================
-// LLM CALL 3 — TOOL DECISION
-// ====================================================
+    // ====================================================
+    // LLM CALL 3 — TOOL DECISION
+    // ====================================================
 
-console.log("LLM CALL 3 — Tool Planning");
+    console.log("LLM CALL 3 — Tool Planning");
 
-const finalPlanResponse=await callModelWithRetry({
-model:"models/gemini-2.5-flash-lite",
-contents:`
+    const finalPlanResponse = await callModelWithRetry({
+        model: "models/gemini-2.5-flash-lite",
+        contents: `
 You are a research planner.
 
 Decide which external sources
@@ -279,94 +276,99 @@ ${safeMemory}
 Query:
 ${query}
 `
-});
+    });
 
-let finalPlan;
+    let finalPlan;
 
-try{
+    try {
 
-finalPlan=JSON.parse(
-finalPlanResponse.text
-.replace(/`json/g,"")
-.replace(/`/g,"")
-.trim()
-);
+        finalPlan = JSON.parse(
+            finalPlanResponse.text
+                .replace(/`json/g, "")
+                .replace(/`/g, "")
+                .trim()
+        );
 
-}catch{
+    } catch {
 
-finalPlan={
-tool_plan:[
-{tool:"tavily",confidence:0.8},
-{tool:"arxiv",confidence:0.6},
-{tool:"github",confidence:0.6}
-]
-};
+        finalPlan = {
+            tool_plan: [
+                { tool: "tavily", confidence: 0.8 },
+                { tool: "arxiv", confidence: 0.6 },
+                { tool: "github", confidence: 0.6 }
+            ]
+        };
 
-}
+    }
 
-const TOOL_THRESHOLD=0.6;
+    const TOOL_THRESHOLD = 0.6;
 
-let webResults=[];
-let arxivResults=[];
-let githubResults=[];
+    let webResults = [];
+    let arxivResults = [];
+    let githubResults = [];
 
-const tavilyConfidence=
-finalPlan.tool_plan?.find(t=>t.tool==="tavily")?.confidence||0;
+    const tavilyConfidence =
+        finalPlan.tool_plan?.find(t => t.tool === "tavily")?.confidence || 0;
 
-const arxivConfidence=
-finalPlan.tool_plan?.find(t=>t.tool==="arxiv")?.confidence||0;
+    const arxivConfidence =
+        finalPlan.tool_plan?.find(t => t.tool === "arxiv")?.confidence || 0;
 
-const githubConfidence=
-finalPlan.tool_plan?.find(t=>t.tool==="github")?.confidence||0;
+    const githubConfidence =
+        finalPlan.tool_plan?.find(t => t.tool === "github")?.confidence || 0;
 
-console.log("Tool Confidence:",{
-tavily:tavilyConfidence,
-arxiv:arxivConfidence,
-github:githubConfidence
-});
+    console.log("Tool Confidence:", {
+        tavily: tavilyConfidence,
+        arxiv: arxivConfidence,
+        github: githubConfidence
+    });
 
-// execute tools
+    // execute tools
 
-if(tavilyConfidence>TOOL_THRESHOLD){
-console.log("Executing Tavily search");
-webResults=await searchWeb(query);
-}
+    if (tavilyConfidence > TOOL_THRESHOLD) {
+        console.log("Executing Tavily search");
+        webResults = await searchWeb(query);
+    }
 
-if(arxivConfidence>TOOL_THRESHOLD){
-console.log("Executing arXiv search");
-arxivResults=await searchArxiv(query);
-}
+    if (arxivConfidence > TOOL_THRESHOLD) {
+        console.log("Executing arXiv search");
+        arxivResults = await searchArxiv(query);
+    }
 
-if(githubConfidence>TOOL_THRESHOLD){
-console.log("Executing GitHub search");
-githubResults=await searchGitHub(query);
-}
+    if (githubConfidence > TOOL_THRESHOLD) {
+        console.log("Executing GitHub search");
+        githubResults = await searchGitHub(query);
+    }
 
-// ====================================================
-// TOOL CONTEXT
-// ====================================================
+    // ====================================================
+    // TOOL CONTEXT
+    // ====================================================
 
-const toolContext=`
+    const toolContextDraft = `
 
 Web Results:
-${webResults.map(r=>`- ${r.title}`).join("\n")}
+${webResults.map(r => `- ${r.title}: ${r.content}`).join("\n")}
 
 arXiv Papers:
-${arxivResults.map(p=>`- ${p.title}`).join("\n")}
+${arxivResults.map(p => `- ${p.title}: ${p.summary}`).join("\n")}
 
 GitHub Repositories:
-${githubResults.map(g=>`- ${g.name}`).join("\n")}
+${githubResults.map(g => `- ${g.name}: ${g.description}`).join("\n")}
 `;
 
-// ====================================================
-// LLM CALL 4 — FINAL REPORT
-// ====================================================
+    const MAX_PROMPT_CHARS = 12000;
+    const toolContext = toolContextDraft.length > MAX_PROMPT_CHARS
+        ? toolContextDraft.substring(0, MAX_PROMPT_CHARS) + "\n...[TRUNCATED TO PREVENT PROMPT OVERFLOW]"
+        : toolContextDraft;
 
-console.log("LLM CALL 4 — Final Research Report");
+    // ====================================================
+    // LLM CALL 4 — FINAL REPORT
+    // ====================================================
 
-const reportResponse=await callModelWithRetry({
-model:"models/gemini-2.5-flash-lite",
-contents:`
+    console.log("LLM CALL 4 — Final Research Report");
+
+    const reportResponse = await callModelWithRetry({
+        model: "models/gemini-2.5-flash-lite",
+        contents: `
 You are a senior research assistant.
 
 ${personaInstruction}
@@ -389,47 +391,47 @@ Generate a structured research report.
 
 End with confidence score.
 `
-});
+    });
 
-// ====================================================
-// LLM CALL 5 — MEMORY COMPRESSION
-// ====================================================
+    // ====================================================
+    // LLM CALL 5 — MEMORY COMPRESSION
+    // ====================================================
 
-console.log("LLM CALL 5 — Memory Compression");
+    console.log("LLM CALL 5 — Memory Compression");
 
-const summary=await runGroqPrompt(`
+    const summary = await runGroqPrompt(`
 Summarize the research below into
 5 durable insights.
 
 ${reportResponse.text}
 `);
 
-return{
+    return {
 
-answer:reportResponse.text,
+        answer: reportResponse.text,
 
-memorySummary:summary,
+        memorySummary: summary,
 
-usage:{
-totalTokenCount:
-(plannerResponse.usageMetadata?.totalTokenCount||0)+
-(reportResponse.usageMetadata?.totalTokenCount||0)
-},
+        usage: {
+            totalTokenCount:
+                (plannerResponse.usageMetadata?.totalTokenCount || 0) +
+                (reportResponse.usageMetadata?.totalTokenCount || 0)
+        },
 
-reasoning:{
-planner:plannerOutput,
-tools:{
-web:webResults.length,
-arxiv:arxivResults.length,
-github:githubResults.length
+        reasoning: {
+            planner: plannerOutput,
+            tools: {
+                web: webResults.length,
+                arxiv: arxivResults.length,
+                github: githubResults.length
+            }
+        }
+
+    };
+
 }
-}
 
-};
-
-}
-
-module.exports={
-runQuickResearch,
-runDeepResearch
+module.exports = {
+    runQuickResearch,
+    runDeepResearch
 };

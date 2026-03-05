@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import "./App.css";
 import "katex/dist/katex.min.css";
@@ -7,15 +7,19 @@ import PipelineProgress from "./components/PipelineProgress";
 import QuickTake from "./components/QuickTake";
 import ReportViewer from "./components/ReportViewer";
 import NotesPanel from "./components/NotesPanel";
-import { FiCpu, FiMessageSquare, FiTrendingUp, FiLogOut, FiUser } from "react-icons/fi";
+import SessionSidebar from "./components/SessionSidebar";
+import StoredSessionView from "./components/StoredSessionView";
+import { FiCpu, FiMessageSquare, FiLogOut, FiUser } from "react-icons/fi";
 
 const API_BASE = "http://localhost:5000/research";
+const SESSION_API = "http://localhost:5000/api/session";
 
 function ResearchWorkspace() {
     const navigate = useNavigate();
 
     // User profile
     const storedUser = JSON.parse(localStorage.getItem("user") || "null");
+    const token = localStorage.getItem("token");
     const [profileOpen, setProfileOpen] = useState(false);
 
     const handleLogout = () => {
@@ -23,6 +27,23 @@ function ResearchWorkspace() {
         localStorage.removeItem("user");
         navigate("/login");
     };
+
+    // Auth headers helper
+    const authHeaders = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+    };
+
+    // ==================
+    // Session state
+    // ==================
+    const [sessions, setSessions] = useState([]);
+    const [activeSessionId, setActiveSessionId] = useState(null);
+    const [sessionMessages, setSessionMessages] = useState([]);
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const [sessionLoading, setSessionLoading] = useState(false);
+    const [activeSession, setActiveSession] = useState(null);
+    const loadingSessionRef = useRef(null);
 
     // ==================
     // Core state
@@ -34,6 +55,7 @@ function ResearchWorkspace() {
     const [response, setResponse] = useState("");
     const [usage, setUsage] = useState(null);
     const [reasoning, setReasoning] = useState(null);
+    const [memoryCount, setMemoryCount] = useState(null);
 
     const [loading, setLoading] = useState(false);
     const [showSteps, setShowSteps] = useState(false);
@@ -65,6 +87,131 @@ function ResearchWorkspace() {
     const [clarificationDepth, setClarificationDepth] = useState(0);
 
     // ==================
+    // Load sessions on mount
+    // ==================
+    useEffect(() => {
+        if (token) {
+            fetchSessions();
+        }
+    }, [token]);
+
+    const fetchSessions = async () => {
+        try {
+            const res = await fetch(`${SESSION_API}/list`, { headers: authHeaders });
+            const data = await res.json();
+            if (Array.isArray(data)) {
+                setSessions(data);
+            }
+        } catch (err) {
+            console.error("Failed to load sessions:", err);
+        }
+    };
+
+    // ==================
+    // Session management
+    // ==================
+    const handleNewSession = () => {
+        setActiveSessionId(null);
+        setActiveSession(null);
+        setSessionMessages([]);
+        setQuery("");
+        setResponse("");
+        setUsage(null);
+        setReasoning(null);
+        setMemoryCount(null);
+        setQuickTake("");
+        setTransformResult(null);
+        setSelectionResult(null);
+        setClarificationNeeded(false);
+    };
+
+    const handleDeleteSession = async (sessionId) => {
+        try {
+            await fetch(`${SESSION_API}/${sessionId}`, {
+                method: "DELETE",
+                headers: authHeaders,
+            });
+            if (activeSessionId === sessionId) {
+                handleNewSession();
+            }
+            await fetchSessions();
+        } catch (err) {
+            console.error("Failed to delete session:", err);
+        }
+    };
+
+    const handleSelectSession = async (sessionId) => {
+        // Prevent duplicate concurrent fetches
+        if (loadingSessionRef.current === sessionId) return;
+        loadingSessionRef.current = sessionId;
+
+        setActiveSessionId(sessionId);
+        setSessionLoading(true);
+        setResponse("");
+        setUsage(null);
+        setReasoning(null);
+        setMemoryCount(null);
+        setQuickTake("");
+        setTransformResult(null);
+        setSelectionResult(null);
+        setClarificationNeeded(false);
+
+        try {
+            const res = await fetch(`${SESSION_API}/${sessionId}`, { headers: authHeaders });
+            const data = await res.json();
+            setSessionMessages(data.messages || []);
+            setActiveSession(data.session || null);
+
+            // Show the last assistant message as the current response
+            const lastAssistant = [...(data.messages || [])].reverse().find(m => m.role === "assistant" && m.type !== "followup");
+            if (lastAssistant) {
+                setResponse(lastAssistant.content);
+                setOriginalReport(lastAssistant.content);
+            }
+
+            // Set query to last user message
+            const lastUser = [...(data.messages || [])].reverse().find(m => m.role === "user" && m.type !== "followup");
+            if (lastUser) {
+                setQuery(lastUser.content);
+            }
+        } catch (err) {
+            console.error("Failed to load session:", err);
+        }
+
+        setSessionLoading(false);
+        loadingSessionRef.current = null;
+    };
+
+    const storeMessage = async (sessionId, role, content) => {
+        try {
+            await fetch(`${SESSION_API}/${sessionId}/message`, {
+                method: "POST",
+                headers: authHeaders,
+                body: JSON.stringify({ role, content }),
+            });
+        } catch (err) {
+            console.error("Failed to store message:", err);
+        }
+    };
+
+    const createSession = async (queryText) => {
+        try {
+            const res = await fetch(`${SESSION_API}/create`, {
+                method: "POST",
+                headers: authHeaders,
+                body: JSON.stringify({ query: queryText }),
+            });
+            const data = await res.json();
+            setActiveSessionId(data.id);
+            await fetchSessions();
+            return data.id;
+        } catch (err) {
+            console.error("Failed to create session:", err);
+            return null;
+        }
+    };
+
+    // ==================
     // Research execution
     // ==================
     const runResearch = async (finalQuery = query) => {
@@ -83,6 +230,18 @@ function ResearchWorkspace() {
             setClarificationDepth(0);
         }
 
+        // Create or use existing session
+        let currentSessionId = activeSessionId;
+        if (!currentSessionId) {
+            currentSessionId = await createSession(finalQuery);
+        }
+
+        // Store user message
+        if (currentSessionId) {
+            await storeMessage(currentSessionId, "user", finalQuery);
+            setSessionMessages(prev => [...prev, { role: "user", content: finalQuery, timestamp: new Date().toISOString() }]);
+        }
+
         try {
             const res = await fetch(API_BASE, {
                 method: "POST",
@@ -91,7 +250,8 @@ function ResearchWorkspace() {
                     query: finalQuery,
                     mode,
                     persona,
-                    clarificationDepth: finalQuery === query ? 0 : clarificationDepth
+                    clarificationDepth: finalQuery === query ? 0 : clarificationDepth,
+                    sessionId: currentSessionId,
                 }),
             });
 
@@ -114,8 +274,15 @@ function ResearchWorkspace() {
             setOriginalReport(reportText);
             setUsage(data.usage || null);
             setReasoning(data.reasoning || null);
+            setMemoryCount(data.memoryCount !== undefined ? data.memoryCount : null);
 
-            // Generate Quick Take
+            // Store assistant message
+            if (currentSessionId && reportText && !data.error) {
+                await storeMessage(currentSessionId, "assistant", reportText);
+                setSessionMessages(prev => [...prev, { role: "assistant", content: reportText, timestamp: new Date().toISOString() }]);
+            }
+
+            // Generate Quick Take & persist to session
             if (reportText && !data.error) {
                 setQuickTakeLoading(true);
                 try {
@@ -125,7 +292,21 @@ function ResearchWorkspace() {
                         body: JSON.stringify({ reportText }),
                     });
                     const qtData = await qtRes.json();
-                    setQuickTake(qtData.quickTake || "");
+                    const qt = qtData.quickTake || "";
+                    setQuickTake(qt);
+
+                    // Persist quickTake to session
+                    if (currentSessionId && qt) {
+                        try {
+                            await fetch(`${SESSION_API}/${currentSessionId}/summary`, {
+                                method: "PUT",
+                                headers: authHeaders,
+                                body: JSON.stringify({ quickTake: qt }),
+                            });
+                        } catch (e) {
+                            console.error("Failed to persist quickTake:", e);
+                        }
+                    }
                 } catch {
                     console.error("Quick Take generation failed");
                 }
@@ -294,209 +475,271 @@ function ResearchWorkspace() {
     // ==================
     return (
         <div className="app">
+            {/* ---- Session Sidebar ---- */}
+            <SessionSidebar
+                sessions={sessions}
+                activeSessionId={activeSessionId}
+                onSelectSession={handleSelectSession}
+                onNewSession={handleNewSession}
+                onDeleteSession={handleDeleteSession}
+                collapsed={sidebarCollapsed}
+                onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
+            />
+
             <div className="main-container">
-                {/* ---- Input Card ---- */}
-                <div className="input-card">
-                    <div className="brand-row">
-                        <div className="brand">
-                            <div className="brand-icon"><FiCpu /></div>
-                            <div>
-                                <h1>Research Agent</h1>
-                                <p className="subtitle">Memory-Augmented Deep Research Engine</p>
-                            </div>
-                        </div>
-
-                        {/* User Profile */}
-                        <div className="user-profile">
-                            <button
-                                className="profile-btn"
-                                onClick={() => setProfileOpen(!profileOpen)}
-                                id="profile-toggle-btn"
-                            >
-                                <FiUser />
-                                <span>{storedUser?.name || "User"}</span>
-                            </button>
-
-                            {profileOpen && (
-                                <div className="profile-dropdown">
-                                    <div className="profile-info">
-                                        <div className="profile-avatar">
-                                            {(storedUser?.name || "U").charAt(0).toUpperCase()}
-                                        </div>
-                                        <div>
-                                            <p className="profile-name">{storedUser?.name || "User"}</p>
-                                            <p className="profile-email">{storedUser?.email || ""}</p>
-                                        </div>
+                {/* ===== STORED SESSION VIEW ===== */}
+                {activeSessionId && activeSession ? (
+                    <>
+                        {/* Brand + Profile row (always visible) */}
+                        <div className="input-card session-brand-card">
+                            <div className="brand-row">
+                                <div className="brand">
+                                    <div className="brand-icon"><FiCpu /></div>
+                                    <div>
+                                        <h1>Mentis</h1>
+                                        <p className="subtitle">Agentic Deep Research Workspace</p>
                                     </div>
-                                    <button className="logout-btn" onClick={handleLogout}>
-                                        <FiLogOut /> Sign Out
+                                </div>
+
+                                <div className="user-profile">
+                                    <button
+                                        className="profile-btn"
+                                        onClick={() => setProfileOpen(!profileOpen)}
+                                        id="profile-toggle-btn"
+                                    >
+                                        <FiUser />
+                                        <span>{storedUser?.name || "User"}</span>
                                     </button>
+
+                                    {profileOpen && (
+                                        <div className="profile-dropdown">
+                                            <div className="profile-info">
+                                                <div className="profile-avatar">
+                                                    {(storedUser?.name || "U").charAt(0).toUpperCase()}
+                                                </div>
+                                                <div>
+                                                    <p className="profile-name">{storedUser?.name || "User"}</p>
+                                                    <p className="profile-email">{storedUser?.email || ""}</p>
+                                                </div>
+                                            </div>
+                                            <button className="logout-btn" onClick={handleLogout}>
+                                                <FiLogOut /> Sign Out
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
-                            )}
-                        </div>
-                    </div>
-
-                    <textarea
-                        placeholder="Enter your research query..."
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                                e.preventDefault();
-                                runResearch();
-                            }
-                        }}
-                        id="research-query-input"
-                    />
-
-                    <div className="controls">
-                        <div className="dropdown-group">
-                            <select
-                                value={mode}
-                                onChange={(e) => setMode(e.target.value)}
-                                className="dropdown"
-                                id="mode-select"
-                            >
-                                <option value="quick">⚡ Quick Analysis</option>
-                                <option value="deep">🔬 Deep Research</option>
-                            </select>
-
-                            <select
-                                value={persona}
-                                onChange={(e) => setPersona(e.target.value)}
-                                className="dropdown"
-                                id="persona-select"
-                            >
-                                <option value="architect">🏗️ Systems Architect</option>
-                                <option value="analyst">📊 Research Analyst</option>
-                                <option value="strategist">🎯 Strategy Lead</option>
-                                <option value="general">👤 General User</option>
-                            </select>
-                        </div>
-
-                        <button
-                            className="run-btn"
-                            onClick={() => runResearch()}
-                            disabled={loading || !query.trim()}
-                            id="run-research-btn"
-                        >
-                            {loading ? (
-                                <span className="btn-loading">
-                                    <span className="spinner" />
-                                    Researching...
-                                </span>
-                            ) : (
-                                "Run Research"
-                            )}
-                        </button>
-                    </div>
-                </div>
-
-                {/* ---- Pipeline Progress ---- */}
-                <PipelineProgress active={loading} />
-
-                {/* ---- Quick Take Loading ---- */}
-                {quickTakeLoading && !loading && (
-                    <div className="quicktake-loading">
-                        <div className="spinner" />
-                        <span>Generating Quick Take...</span>
-                    </div>
-                )}
-
-                {/* ---- Clarification Questions ---- */}
-                {clarificationNeeded && (
-                    <div className="clarification-box">
-                        <h3><FiMessageSquare className="inline-icon" /> Agent needs clarification</h3>
-                        {questions.map((q, i) => (
-                            <div key={i} className="question-block">
-                                <p>{q.question}</p>
-                                {q.options.map((option, j) => (
-                                    <label key={j} className="option-label">
-                                        <input
-                                            type="radio"
-                                            name={`question-${i}`}
-                                            value={option}
-                                            checked={answers[i] === option}
-                                            onChange={() => {
-                                                const updated = [...answers];
-                                                updated[i] = option;
-                                                setAnswers(updated);
-                                            }}
-                                        />
-                                        {option}
-                                    </label>
-                                ))}
                             </div>
-                        ))}
-                        <button className="run-btn" onClick={submitClarifications}>
-                            Submit Answers
-                        </button>
-                    </div>
-                )}
-
-                {/* ---- Usage ---- */}
-                {usage && (
-                    <div className="usage">
-                        <span><FiTrendingUp className="inline-icon" /> Total Tokens: {usage.totalTokenCount}</span>
-                    </div>
-                )}
-
-                {/* ---- Reasoning Pipeline ---- */}
-                {mode === "deep" && reasoning && (
-                    <div className="steps-container">
-                        <div className="steps-header" onClick={() => setShowSteps(!showSteps)}>
-                            <FiCpu className="inline-icon" /> Research Pipeline {showSteps ? "▲" : "▼"}
                         </div>
-                        {showSteps && (
-                            <div className="steps-content">
-                                <div className="step-block">
-                                    <strong>Step 1: Research Planning</strong>
-                                    <pre>{reasoning.planner}</pre>
+
+                        {sessionLoading ? (
+                            <div className="session-loading">
+                                <div className="spinner" />
+                                <span>Loading session...</span>
+                            </div>
+                        ) : (
+                            <StoredSessionView
+                                session={activeSession}
+                                messages={sessionMessages}
+                                token={token}
+                                onReportAction={handleReportAction}
+                                actionLoading={actionLoading}
+                                activeAction={activeAction}
+                                transformResult={transformResult}
+                                onAcceptTransform={acceptTransform}
+                                onRejectTransform={rejectTransform}
+                                onSelectionTransform={handleSelectionTransform}
+                                selectionResult={selectionResult}
+                                selectionSource={selectionSource}
+                                onAcceptSelection={acceptSelection}
+                                onRejectSelection={rejectSelection}
+                                onExport={handleExport}
+                            />
+                        )}
+                    </>
+                ) : (
+                    <>
+                        {/* ===== NEW RESEARCH WORKSPACE ===== */}
+                        <div className="input-card">
+                            <div className="brand-row">
+                                <div className="brand">
+                                    <div className="brand-icon"><FiCpu /></div>
+                                    <div>
+                                        <h1>Mentis</h1>
+                                        <p className="subtitle">Agentic Deep Research Workspace</p>
+                                    </div>
                                 </div>
-                                <div className="step-block">
-                                    <strong>Step 2: Tool Decision</strong>
-                                    <p>
-                                        arXiv Papers: {reasoning.tools?.arxiv || 0} · GitHub Repos:{" "}
-                                        {reasoning.tools?.github || 0}
-                                    </p>
+
+                                <div className="user-profile">
+                                    <button
+                                        className="profile-btn"
+                                        onClick={() => setProfileOpen(!profileOpen)}
+                                        id="profile-toggle-btn"
+                                    >
+                                        <FiUser />
+                                        <span>{storedUser?.name || "User"}</span>
+                                    </button>
+
+                                    {profileOpen && (
+                                        <div className="profile-dropdown">
+                                            <div className="profile-info">
+                                                <div className="profile-avatar">
+                                                    {(storedUser?.name || "U").charAt(0).toUpperCase()}
+                                                </div>
+                                                <div>
+                                                    <p className="profile-name">{storedUser?.name || "User"}</p>
+                                                    <p className="profile-email">{storedUser?.email || ""}</p>
+                                                </div>
+                                            </div>
+                                            <button className="logout-btn" onClick={handleLogout}>
+                                                <FiLogOut /> Sign Out
+                                            </button>
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="step-block">
-                                    <strong>Step 3: Research Synthesis</strong>
-                                    <p>
-                                        Combined: Memory context · Planner reasoning · External sources ·
-                                        Persona-guided analysis
-                                    </p>
+                            </div>
+
+                            <textarea
+                                placeholder="Enter your research query..."
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey) {
+                                        e.preventDefault();
+                                        runResearch();
+                                    }
+                                }}
+                                id="research-query-input"
+                            />
+
+                            <div className="controls">
+                                <div className="dropdown-group">
+                                    <select
+                                        value={mode}
+                                        onChange={(e) => setMode(e.target.value)}
+                                        className="dropdown"
+                                        id="mode-select"
+                                    >
+                                        <option value="quick">⚡ Quick Analysis</option>
+                                        <option value="deep">🔬 Deep Research</option>
+                                    </select>
+
+                                    <select
+                                        value={persona}
+                                        onChange={(e) => setPersona(e.target.value)}
+                                        className="dropdown"
+                                        id="persona-select"
+                                    >
+                                        <option value="architect">🏗️ Systems Architect</option>
+                                        <option value="analyst">📊 Research Analyst</option>
+                                        <option value="strategist">🎯 Strategy Lead</option>
+                                        <option value="general">👤 General User</option>
+                                    </select>
                                 </div>
+
+                                <button
+                                    className="run-btn"
+                                    onClick={() => runResearch()}
+                                    disabled={loading || !query.trim()}
+                                    id="run-research-btn"
+                                >
+                                    {loading ? (
+                                        <span className="btn-loading">
+                                            <span className="spinner" />
+                                            Researching...
+                                        </span>
+                                    ) : (
+                                        "Run Research"
+                                    )}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* ---- Memory Context Indicator ---- */}
+                        {memoryCount !== null && !loading && (
+                            <div className="memory-indicator" style={{ textAlign: "center", fontSize: "0.85rem", color: "#666", marginBottom: "20px" }}>
+                                <strong>Memory Context</strong><br />
+                                {memoryCount} similar {memoryCount === 1 ? 'memory' : 'memories'} retrieved
                             </div>
                         )}
-                    </div>
+
+                        {/* ---- Pipeline Progress ---- */}
+                        <PipelineProgress active={loading} />
+
+                        {/* ---- Quick Take Loading ---- */}
+                        {quickTakeLoading && !loading && (
+                            <div className="quicktake-loading">
+                                <div className="spinner" />
+                                <span>Generating Quick Take...</span>
+                            </div>
+                        )}
+
+                        {/* ---- Clarification Questions ---- */}
+                        {clarificationNeeded && (
+                            <div className="clarification-box">
+                                <h3><FiMessageSquare className="inline-icon" /> Agent needs clarification</h3>
+                                {questions.map((q, i) => (
+                                    <div key={i} className="question-block">
+                                        <p>{q.question}</p>
+                                        {q.options.map((option, j) => (
+                                            <label key={j} className="option-label">
+                                                <input
+                                                    type="radio"
+                                                    name={`question-${i}`}
+                                                    value={option}
+                                                    checked={answers[i] === option}
+                                                    onChange={() => {
+                                                        const updated = [...answers];
+                                                        updated[i] = option;
+                                                        setAnswers(updated);
+                                                    }}
+                                                />
+                                                {option}
+                                            </label>
+                                        ))}
+                                    </div>
+                                ))}
+                                <button className="run-btn" onClick={submitClarifications}>
+                                    Submit Answers
+                                </button>
+                            </div>
+                        )}
+
+
+
+                        {/* ---- Token Usage Indicator ---- */}
+                        {usage && !loading && (
+                            <div className="token-usage" style={{ textAlign: "center", fontSize: "0.85rem", color: "#888", marginBottom: "10px" }}>
+                                Tokens: {usage.totalTokenCount}
+                            </div>
+                        )}
+
+                        {/* ---- Quick Take ---- */}
+                        <QuickTake
+                            quickTake={quickTake}
+                            onViewFullReport={() => setReportOpen(true)}
+                            onExport={handleExport}
+                        />
+
+                        {/* ---- Full Report Modal ---- */}
+                        <ReportViewer
+                            isOpen={reportOpen}
+                            onClose={() => setReportOpen(false)}
+                            reportText={response}
+                            onAction={handleReportAction}
+                            actionLoading={actionLoading}
+                            activeAction={activeAction}
+                            transformResult={transformResult}
+                            onAcceptTransform={acceptTransform}
+                            onRejectTransform={rejectTransform}
+                            onSelectionTransform={handleSelectionTransform}
+                            selectionResult={selectionResult}
+                            selectionSource={selectionSource}
+                            onAcceptSelection={acceptSelection}
+                            onRejectSelection={rejectSelection}
+                            onExport={handleExport}
+                        />
+                    </>
                 )}
-
-                {/* ---- Quick Take ---- */}
-                <QuickTake
-                    quickTake={quickTake}
-                    onViewFullReport={() => setReportOpen(true)}
-                    onExport={handleExport}
-                />
-
-                {/* ---- Full Report Modal ---- */}
-                <ReportViewer
-                    isOpen={reportOpen}
-                    onClose={() => setReportOpen(false)}
-                    reportText={response}
-                    onAction={handleReportAction}
-                    actionLoading={actionLoading}
-                    activeAction={activeAction}
-                    transformResult={transformResult}
-                    onAcceptTransform={acceptTransform}
-                    onRejectTransform={rejectTransform}
-                    onSelectionTransform={handleSelectionTransform}
-                    selectionResult={selectionResult}
-                    selectionSource={selectionSource}
-                    onAcceptSelection={acceptSelection}
-                    onRejectSelection={rejectSelection}
-                    onExport={handleExport}
-                />
             </div>
 
             {/* ---- Notes Panel ---- */}

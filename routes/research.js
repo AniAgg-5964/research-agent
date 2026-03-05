@@ -4,23 +4,52 @@ const router = express.Router();
 const { runQuickResearch, runDeepResearch } = require("../services/geminiService");
 const { storeMemory, searchMemory } = require("../services/memoryService");
 const { runGroqPrompt } = require("../services/groqService");
+const Message = require("../models/Message");
 
 router.post("/", async (req, res) => {
   try {
-    const { query, mode, persona, clarificationDepth = 0 } = req.body;
+    const { query, mode, persona, clarificationDepth = 0, sessionId } = req.body;
 
     if (!query) {
       return res.status(400).json({ error: "Query is required" });
     }
 
+    // ===========================
+    // Build context from previous session messages
+    // ===========================
+    let contextPrefix = "";
+    if (sessionId) {
+      try {
+        const prevMessages = await Message.find({ sessionId })
+          .sort({ timestamp: -1 })
+          .limit(10)
+          .lean();
+
+        if (prevMessages.length > 0) {
+          const chronological = prevMessages.reverse();
+          contextPrefix = "Previous conversation context:\n" +
+            chronological
+              .map(m => `${m.role === "user" ? "User" : "Assistant"}: ${m.content.substring(0, 500)}`)
+              .join("\n") +
+            "\n\n---\nCurrent query:\n";
+          console.log(`Injected ${chronological.length} previous messages as context`);
+        }
+      } catch (ctxErr) {
+        console.error("Context injection error:", ctxErr.message);
+      }
+    }
+
+    const enrichedQuery = contextPrefix + query;
+
     let aiResponse;
+    let memoryCount = 0;
 
     if (mode === "deep") {
 
       // ===========================
       // 1️⃣ Search Similar Memory
       // ===========================
-      const pastMemories = await searchMemory(query);
+      const pastMemories = await searchMemory(enrichedQuery);
 
       console.log(
         "Raw retrieved memories:",
@@ -32,6 +61,7 @@ router.post("/", async (req, res) => {
       const filteredMemories = pastMemories.filter(
         m => m.score >= SIMILARITY_THRESHOLD
       );
+      memoryCount = filteredMemories.length;
 
       let memoryText = "";
 
@@ -42,13 +72,18 @@ router.post("/", async (req, res) => {
           .join("\n\n");
       }
 
+      const MAX_MEMORY_CHARS = 3000;
+      if (memoryText.length > MAX_MEMORY_CHARS) {
+        memoryText = memoryText.substring(0, MAX_MEMORY_CHARS);
+      }
+
       console.log("Filtered memories count:", filteredMemories.length);
       console.log("Memory injected length:", memoryText.length);
 
       // ===========================
       // 2️⃣ Run Deep Research
       // ===========================
-      aiResponse = await runDeepResearch(query, memoryText, persona, clarificationDepth);
+      aiResponse = await runDeepResearch(enrichedQuery, memoryText, persona, clarificationDepth);
 
       // ===========================
       // 3️⃣ Handle Clarification
@@ -79,7 +114,7 @@ router.post("/", async (req, res) => {
       }
 
     } else {
-      aiResponse = await runQuickResearch(query, persona);
+      aiResponse = await runQuickResearch(enrichedQuery, persona);
     }
 
     // ===========================
@@ -89,7 +124,8 @@ router.post("/", async (req, res) => {
       answer: aiResponse.answer,
       usage: aiResponse.usage,
       mode: mode || "quick",
-      reasoning: aiResponse.reasoning || null
+      reasoning: aiResponse.reasoning || null,
+      memoryCount: memoryCount
     });
 
   } catch (error) {

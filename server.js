@@ -4,6 +4,7 @@ const express = require("express");
 const connectDB = require("./config/db");
 const researchRoute = require("./routes/research");
 const authRoutes = require("./routes/authRoutes");
+const sessionRoutes = require("./routes/sessionRoutes");
 const { initializeCollection } = require("./services/memoryService");
 
 const app = express();
@@ -17,6 +18,9 @@ app.get("/", (req, res) => {
 
 // Auth routes
 app.use("/api/auth", authRoutes);
+
+// Session routes
+app.use("/api/session", sessionRoutes);
 
 // Research routes (existing — unchanged)
 app.use("/research", researchRoute);
