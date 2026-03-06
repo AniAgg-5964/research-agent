@@ -440,9 +440,27 @@ function ResearchWorkspace() {
         []
     );
 
+    // ==================
+    // Text Replacement Helper
+    // ==================
+    const smartReplace = (fullText, sourceText, replacementText) => {
+        if (!fullText || !sourceText) return fullText;
+        if (fullText.includes(sourceText)) return fullText.replace(sourceText, replacementText);
+        try {
+            const escaped = sourceText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const flexiblePattern = escaped.replace(/\s+/g, '[\\s\\*_`#]*');
+            const regex = new RegExp(flexiblePattern, 'i');
+            return fullText.replace(regex, replacementText);
+        } catch (e) {
+            console.error("Smart replace failed:", e);
+            return fullText;
+        }
+    };
+
     const acceptSelection = () => {
         if (selectionResult && selectionSource) {
-            const updated = response.replace(selectionSource, selectionResult);
+            const updated = smartReplace(response, selectionSource, selectionResult);
+            console.log("Applying text edit:", { source: selectionSource, result: selectionResult, updatedLength: updated.length });
             setResponse(updated);
             setOriginalReport(updated);
             setSelectionResult(null);
@@ -583,6 +601,7 @@ function ResearchWorkspace() {
                             <StoredSessionView
                                 session={activeSession}
                                 messages={sessionMessages}
+                                reportText={response}
                                 token={token}
                                 onReportAction={handleReportAction}
                                 actionLoading={actionLoading}

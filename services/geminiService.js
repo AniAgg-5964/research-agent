@@ -249,10 +249,13 @@ ${query}
     const finalPlanResponse = await callModelWithRetry({
         model: "models/gemini-2.5-flash-lite",
         contents: `
-You are a research planner.
+You are a research planner evaluating external sources.
 
-Decide which external sources
-are useful for answering the query.
+Assign a dynamic confidence score (0.0 to 1.0) to each source based on how relevant it is to the query.
+- For queries about academic research or papers, score 'arxiv' highest.
+- For queries about code, implementations, or repositories, score 'github' highest.
+- For general knowledge or current events, score 'tavily' highest.
+Use scores like 0.1, 0.4, 0.9, etc., based on real relevance. Do NOT use static default scores.
 
 Available tools:
 
@@ -264,9 +267,9 @@ Return JSON:
 
 {
 "tool_plan":[
-{"tool":"tavily","confidence":0.0},
-{"tool":"arxiv","confidence":0.0},
-{"tool":"github","confidence":0.0}
+{"tool":"tavily","confidence":<dynamic_score>},
+{"tool":"arxiv","confidence":<dynamic_score>},
+{"tool":"github","confidence":<dynamic_score>}
 ]
 }
 
@@ -285,14 +288,12 @@ ${query}
 
     try {
 
-        finalPlan = JSON.parse(
-            finalPlanResponse.text
-                .replace(/`json/g, "")
-                .replace(/`/g, "")
-                .trim()
-        );
+        const textMatch = finalPlanResponse.text.match(/\{[\s\S]*\}/);
+        const jsonStr = textMatch ? textMatch[0] : finalPlanResponse.text;
+        finalPlan = JSON.parse(jsonStr);
 
-    } catch {
+    } catch (e) {
+        console.warn("Failed to parse tool plan JSON, using fallback.", e.message);
 
         finalPlan = {
             tool_plan: [
@@ -334,16 +335,21 @@ ${query}
     if (tavilyConfidence > TOOL_THRESHOLD) {
         console.log("Executing Tavily search");
         webResults = await searchWeb(query);
+        console.log(`Tavily returned ${webResults.length} results`);
     }
 
     if (arxivConfidence > TOOL_THRESHOLD) {
         console.log("Executing arXiv search");
         arxivResults = await searchArxiv(query);
+        console.log(`arXiv returned ${arxivResults.length} papers:`);
+        arxivResults.forEach((paper, i) => console.log(`${i + 1}. ${paper.title}`));
     }
 
     if (githubConfidence > TOOL_THRESHOLD) {
         console.log("Executing GitHub search");
         githubResults = await searchGitHub(query);
+        console.log(`GitHub returned ${githubResults.length} repositories:`);
+        githubResults.forEach((repo, i) => console.log(`${i + 1}. ${repo.name}`));
     }
 
     // ====================================================

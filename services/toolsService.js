@@ -131,53 +131,62 @@ async function searchArxiv(query) {
 
 async function searchGitHub(query) {
 
-  try {
+  let attempt = 0;
+  while (attempt < 2) {
+    try {
 
-    console.log("Running GitHub search...");
+      console.log(`Running GitHub search... (Attempt ${attempt + 1})`);
 
-    const compressedQueryRaw = await runGroqPrompt(`Extract 3-5 core technical keywords from the following text for a GitHub repository search. Do not include conversation history or roles. Only return a space-separated list of keywords. Text: ${query}`);
-    let compressedQuery = compressedQueryRaw.replace(/[^\w\s-]/g, " ").replace(/\s+/g, " ").trim();
+      const compressedQueryRaw = await runGroqPrompt(`Extract 3-5 core technical keywords from the following text for a GitHub repository search. Do not include conversation history or roles. Only return a space-separated list of keywords. Text: ${query}`);
+      let compressedQuery = compressedQueryRaw.replace(/[^\w\s-]/g, " ").replace(/\s+/g, " ").trim();
 
-    const githubQuery = compressedQuery
-      .split(" ")
-      .slice(0, 6)
-      .join(" ");
+      const githubQuery = compressedQuery
+        .split(" ")
+        .slice(0, 6)
+        .join(" ");
 
-    console.log("GitHub query:", githubQuery);
+      console.log("GitHub query:", githubQuery);
 
-    const response = await axios.get(
-      "https://api.github.com/search/repositories",
-      {
-        params: {
-          q: githubQuery,
-          sort: "stars",
-          order: "desc",
-          per_page: 3
-        },
-        headers: process.env.GITHUB_TOKEN
-          ? {
-            Authorization: `Bearer ${process.env.GITHUB_TOKEN}`
-          }
-          : {}
+      const response = await axios.get(
+        "https://api.github.com/search/repositories",
+        {
+          params: {
+            q: githubQuery,
+            sort: "stars",
+            order: "desc",
+            per_page: 3
+          },
+          headers: process.env.GITHUB_TOKEN
+            ? {
+              Authorization: `Bearer ${process.env.GITHUB_TOKEN}`
+            }
+            : {}
+        }
+      );
+
+      const repos = response.data.items || [];
+
+      return repos.map(repo => ({
+        name: repo.full_name,
+        description: repo.description,
+        stars: repo.stargazers_count,
+        url: repo.html_url
+      }));
+
+
+    } catch (err) {
+
+      console.error(`GitHub search error on attempt ${attempt + 1}:`, err.message);
+      attempt++;
+      if (attempt < 2) {
+        await new Promise(res => setTimeout(res, 2000));
+        continue;
       }
-    );
+      return [];
 
-    const repos = response.data.items || [];
-
-    return repos.map(repo => ({
-      name: repo.full_name,
-      description: repo.description,
-      stars: repo.stargazers_count,
-      url: repo.html_url
-    }));
-
-
-  } catch (err) {
-
-    console.error("GitHub search error:", err.message);
-    return [];
-
+    }
   }
+  return [];
 
 }
 

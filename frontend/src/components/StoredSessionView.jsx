@@ -9,6 +9,7 @@ import ReportViewer from "./ReportViewer";
 export default function StoredSessionView({
     session,
     messages,
+    reportText,
     token,
     onReportAction,
     actionLoading,
@@ -32,7 +33,7 @@ export default function StoredSessionView({
         setFollowupMessages(followups);
     }, [messages]);
 
-    const fullReport = [...messages]
+    const fullReport = reportText || [...messages]
         .filter(m => m.role === "assistant" && m.type !== "followup")
         .pop()?.content || "";
 

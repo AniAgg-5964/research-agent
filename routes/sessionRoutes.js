@@ -11,18 +11,50 @@ const { runGroqPrompt } = require("../services/groqService");
 function generateTitle(query) {
     if (!query || !query.trim()) return "Untitled Research";
 
-    // Take first 60 chars, trim to last complete word
-    let title = query.trim().substring(0, 60);
-    const lastSpace = title.lastIndexOf(" ");
-    if (lastSpace > 20 && title.length >= 60) {
-        title = title.substring(0, lastSpace);
+    // 1. Get the first meaningful sentence/phrase (split by common punctuation)
+    let title = query.split(/[.?!;\n]/)[0].trim();
+
+    // 2. Remove common conversational or filler prefixes
+    const prefixesToRemove = [
+        "conduct a deep technical investigation of",
+        "conduct a deep investigation of",
+        "deep technical investigation of",
+        "conduct a research on",
+        "conduct research on",
+        "research",
+        "investigate",
+        "tell me about",
+        "explain",
+        "what is",
+        "how does",
+        "find information on"
+    ];
+
+    let lowerTitle = title.toLowerCase();
+    for (const prefix of prefixesToRemove) {
+        if (lowerTitle.startsWith(prefix)) {
+            // Remove the prefix and trim
+            title = title.substring(prefix.length).trim();
+            lowerTitle = title.toLowerCase();
+            break; // only remove the first matching prefix
+        }
     }
 
-    // Capitalize first letter of each word
+    // If we stripped it to nothing, fallback (unlikely but safe)
+    if (!title) title = query.trim().substring(0, 40);
+
+    // 3. Limit to around 8 words max for conciseness
+    const words = title.split(/\s+/);
+    if (words.length > 8) {
+        title = words.slice(0, 8).join(" ");
+    }
+
+    // 4. Capitalize first letter of each word
     title = title
         .split(" ")
-        .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-        .join(" ");
+        .map(w => w ? w.charAt(0).toUpperCase() + w.slice(1) : "")
+        .join(" ")
+        .trim();
 
     return title;
 }

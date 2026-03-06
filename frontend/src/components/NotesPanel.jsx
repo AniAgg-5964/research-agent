@@ -43,7 +43,21 @@ export default function NotesPanel({ isOpen, onToggle, query }) {
 
     const acceptSelection = () => {
         if (selectionResult && selectionSource) {
-            const updated = notes.replace(selectionSource, selectionResult);
+            const smartReplace = (fullText, sourceText, replacementText) => {
+                if (!fullText || !sourceText) return fullText;
+                if (fullText.includes(sourceText)) return fullText.replace(sourceText, replacementText);
+                try {
+                    const escaped = sourceText.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                    const flexiblePattern = escaped.replace(/\s+/g, '[\\s\\*_`#]*');
+                    const regex = new RegExp(flexiblePattern, 'i');
+                    return fullText.replace(regex, replacementText);
+                } catch (e) {
+                    console.error("Smart replace failed:", e);
+                    return fullText;
+                }
+            };
+            const updated = smartReplace(notes, selectionSource, selectionResult);
+            console.log("Applying text edit to notes:", { source: selectionSource, result: selectionResult, updatedLength: updated.length });
             setNotes(updated);
             localStorage.setItem(storageKey, updated);
             setSelectionResult(null);
