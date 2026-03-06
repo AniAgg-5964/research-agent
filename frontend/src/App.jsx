@@ -9,7 +9,7 @@ import ReportViewer from "./components/ReportViewer";
 import NotesPanel from "./components/NotesPanel";
 import SessionSidebar from "./components/SessionSidebar";
 import StoredSessionView from "./components/StoredSessionView";
-import { FiCpu, FiMessageSquare, FiLogOut, FiUser } from "react-icons/fi";
+import { FiCpu, FiMessageSquare, FiLogOut, FiUser, FiDatabase, FiZap } from "react-icons/fi";
 
 const API_BASE = "http://localhost:5000/research";
 const SESSION_API = "http://localhost:5000/api/session";
@@ -58,6 +58,7 @@ function ResearchWorkspace() {
     const [memoryCount, setMemoryCount] = useState(null);
 
     const [loading, setLoading] = useState(false);
+    const [pipelineSteps, setPipelineSteps] = useState([]);
     const [showSteps, setShowSteps] = useState(false);
 
     // Quick Take state
@@ -123,6 +124,7 @@ function ResearchWorkspace() {
         setTransformResult(null);
         setSelectionResult(null);
         setClarificationNeeded(false);
+        setPipelineSteps([]);
     };
 
     const handleDeleteSession = async (sessionId) => {
@@ -155,6 +157,7 @@ function ResearchWorkspace() {
         setTransformResult(null);
         setSelectionResult(null);
         setClarificationNeeded(false);
+        setPipelineSteps([]);
 
         try {
             const res = await fetch(`${SESSION_API}/${sessionId}`, { headers: authHeaders });
@@ -228,6 +231,9 @@ function ResearchWorkspace() {
         // Reset depth if it's a completely new query (not a clarification submit)
         if (finalQuery === query && clarificationDepth > 0) {
             setClarificationDepth(0);
+            setPipelineSteps([]);
+        } else if (finalQuery === query) {
+            setPipelineSteps([]);
         }
 
         // Create or use existing session
@@ -255,7 +261,44 @@ function ResearchWorkspace() {
                 }),
             });
 
-            const data = await res.json();
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder("utf-8");
+            let done = false;
+            let buffer = "";
+            let data = {};
+
+            while (!done) {
+                const { value, done: readerDone } = await reader.read();
+                done = readerDone;
+                if (value) {
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split("\n");
+                    buffer = lines.pop(); // keep last incomplete line
+
+                    for (const line of lines) {
+                        if (line.trim()) {
+                            try {
+                                const parsed = JSON.parse(line);
+                                if (parsed.type === "progress") {
+                                    setPipelineSteps(prev => [...prev, { stage: parsed.stage, status: parsed.status }]);
+                                } else if (parsed.type === "clarification") {
+                                    data = parsed.data;
+                                    data.clarificationNeeded = true;
+                                } else if (parsed.type === "result") {
+                                    data = parsed.data;
+                                } else if (parsed.type === "error") {
+                                    data = { error: parsed.error };
+                                } else {
+                                    // fallback for older json responses if applicable
+                                    data = parsed;
+                                }
+                            } catch (e) {
+                                console.error("Error parsing NDJSON line:", e);
+                            }
+                        }
+                    }
+                }
+            }
 
             // Clarification mode
             if (data.clarificationNeeded) {
@@ -619,8 +662,8 @@ function ResearchWorkspace() {
                                         className="dropdown"
                                         id="mode-select"
                                     >
-                                        <option value="quick">⚡ Quick Analysis</option>
-                                        <option value="deep">🔬 Deep Research</option>
+                                        <option value="quick">Quick Analysis</option>
+                                        <option value="deep">Deep Research</option>
                                     </select>
 
                                     <select
@@ -629,10 +672,10 @@ function ResearchWorkspace() {
                                         className="dropdown"
                                         id="persona-select"
                                     >
-                                        <option value="architect">🏗️ Systems Architect</option>
-                                        <option value="analyst">📊 Research Analyst</option>
-                                        <option value="strategist">🎯 Strategy Lead</option>
-                                        <option value="general">👤 General User</option>
+                                        <option value="architect">Systems Architect</option>
+                                        <option value="analyst">Research Analyst</option>
+                                        <option value="strategist">Strategy Lead</option>
+                                        <option value="general">General User</option>
                                     </select>
                                 </div>
 
@@ -671,16 +714,20 @@ function ResearchWorkspace() {
                                 margin: "4px auto 16px auto"
                             }}>
                                 {memoryCount !== null && (
-                                    <span title="Retrieved contextual memories">🧠 {memoryCount} {memoryCount === 1 ? 'memory' : 'memories'}</span>
+                                    <span title="Retrieved contextual memories" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <FiDatabase /> {memoryCount} {memoryCount === 1 ? 'memory' : 'memories'}
+                                    </span>
                                 )}
                                 {usage && (
-                                    <span title="Total tokens used">⚡ {usage.totalTokenCount} tokens</span>
+                                    <span title="Total tokens used" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                        <FiZap /> {usage.totalTokenCount} tokens
+                                    </span>
                                 )}
                             </div>
                         )}
 
                         {/* ---- Pipeline Progress ---- */}
-                        <PipelineProgress active={loading} />
+                        <PipelineProgress active={loading} steps={pipelineSteps} paused={clarificationNeeded} />
 
                         {/* ---- Quick Take Loading ---- */}
                         {quickTakeLoading && !loading && (

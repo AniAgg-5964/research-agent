@@ -114,7 +114,8 @@ async function runDeepResearch(
     query,
     memoryContext = "",
     persona = "architect",
-    clarificationDepth = 0
+    clarificationDepth = 0,
+    onProgress = () => { }
 ) {
 
     const personaInstruction = getPersonaInstruction(persona);
@@ -129,6 +130,7 @@ async function runDeepResearch(
     // ====================================================
 
     console.log("LLM CALL 1 — Research Planner");
+    onProgress("Planning Research Strategy");
 
     const plannerResponse = await callModelWithRetry({
         model: "models/gemini-2.5-flash-lite",
@@ -163,6 +165,7 @@ ${query}
     // ====================================================
 
     console.log("LLM CALL 2 — Reflection Agent");
+    onProgress("Analyzing Plan");
 
     const reflection = await runGroqPrompt(`
 You are a critical research reviewer.
@@ -324,6 +327,10 @@ ${query}
 
     // execute tools
 
+    if (tavilyConfidence > TOOL_THRESHOLD || arxivConfidence > TOOL_THRESHOLD || githubConfidence > TOOL_THRESHOLD) {
+        onProgress("Gathering External Knowledge");
+    }
+
     if (tavilyConfidence > TOOL_THRESHOLD) {
         console.log("Executing Tavily search");
         webResults = await searchWeb(query);
@@ -365,6 +372,7 @@ ${githubResults.map(g => `- ${g.name}: ${g.description}`).join("\n")}
     // ====================================================
 
     console.log("LLM CALL 4 — Final Research Report");
+    onProgress("Generating Research Report");
 
     const reportResponse = await callModelWithRetry({
         model: "models/gemini-2.5-flash-lite",

@@ -14,6 +14,13 @@ router.post("/", async (req, res) => {
       return res.status(400).json({ error: "Query is required" });
     }
 
+    res.setHeader("Content-Type", "application/x-ndjson");
+    res.setHeader("Transfer-Encoding", "chunked");
+
+    const emitProgress = (stage, status = "running") => {
+      res.write(JSON.stringify({ type: "progress", stage, status }) + "\n");
+    };
+
     // ===========================
     // Build context from previous session messages
     // ===========================
@@ -49,6 +56,7 @@ router.post("/", async (req, res) => {
       // ===========================
       // 1️⃣ Search Similar Memory
       // ===========================
+      emitProgress("Retrieving Relevant Memory");
       const pastMemories = await searchMemory(enrichedQuery);
 
       console.log(
@@ -83,7 +91,7 @@ router.post("/", async (req, res) => {
       // ===========================
       // 2️⃣ Run Deep Research
       // ===========================
-      aiResponse = await runDeepResearch(enrichedQuery, memoryText, persona, clarificationDepth);
+      aiResponse = await runDeepResearch(enrichedQuery, memoryText, persona, clarificationDepth, emitProgress);
 
       // ===========================
       // 3️⃣ Handle Clarification
@@ -91,17 +99,22 @@ router.post("/", async (req, res) => {
       if (aiResponse.clarificationNeeded) {
         console.log("Agent requested clarification");
 
-        return res.json({
-          clarificationNeeded: true,
-          questions: aiResponse.questions,
-          reasoning: aiResponse.reasoning || null
-        });
+        res.write(JSON.stringify({
+          type: "clarification",
+          data: {
+            clarificationNeeded: true,
+            questions: aiResponse.questions,
+            reasoning: aiResponse.reasoning || null
+          }
+        }) + "\n");
+        return res.end();
       }
 
       // ===========================
       // 4️⃣ Store Memory (Compressed)
       // ===========================
       if (aiResponse.memorySummary) {
+        emitProgress("Saving Knowledge to Memory");
         await storeMemory(
           Date.now(),
           aiResponse.memorySummary,
@@ -120,21 +133,34 @@ router.post("/", async (req, res) => {
     // ===========================
     // 5️⃣ Return Final Response
     // ===========================
-    res.json({
-      answer: aiResponse.answer,
-      usage: aiResponse.usage,
-      mode: mode || "quick",
-      reasoning: aiResponse.reasoning || null,
-      memoryCount: memoryCount
-    });
+    res.write(JSON.stringify({
+      type: "result",
+      data: {
+        answer: aiResponse.answer,
+        usage: aiResponse.usage,
+        mode: mode || "quick",
+        reasoning: aiResponse.reasoning || null,
+        memoryCount: memoryCount
+      }
+    }) + "\n");
+    res.end();
 
   } catch (error) {
     console.error("FULL ERROR:", error);
 
-    res.status(500).json({
-      error: "Something went wrong",
-      details: error.message
-    });
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: "Something went wrong",
+        details: error.message
+      });
+    } else {
+      res.write(JSON.stringify({
+        type: "error",
+        error: "Something went wrong",
+        details: error.message
+      }) + "\n");
+      res.end();
+    }
   }
 });
 

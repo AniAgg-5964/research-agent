@@ -9,15 +9,40 @@ export default function TextSelectionToolbar({ containerRef, onTransform }) {
     const [customInstruction, setCustomInstruction] = useState("");
     const toolbarRef = useRef(null);
 
-    const handleSelectionChange = useCallback(() => {
-        const selection = window.getSelection();
-        const text = selection?.toString().trim();
+    const handleSelectionChange = useCallback((e) => {
+        let text = "";
+        let rect = null;
+
+        const activeEl = document.activeElement;
+        const isTextarea = activeEl && activeEl.tagName === 'TEXTAREA';
+
+        if (isTextarea) {
+            const start = activeEl.selectionStart;
+            const end = activeEl.selectionEnd;
+            if (start !== undefined && end !== undefined && start !== end) {
+                text = activeEl.value.substring(start, end).trim();
+            }
+        } else {
+            const selection = window.getSelection();
+            text = selection?.toString().trim();
+        }
 
         if (!text || text.length < 5) {
             // Small delay to allow button clicks to register before hiding
             setTimeout(() => {
-                const sel = window.getSelection()?.toString().trim();
-                if (!sel || sel.length < 5) {
+                let selText = "";
+                const activeElnow = document.activeElement;
+                if (activeElnow && activeElnow.tagName === 'TEXTAREA') {
+                    const start = activeElnow.selectionStart;
+                    const end = activeElnow.selectionEnd;
+                    if (start !== undefined && end !== undefined && start !== end) {
+                        selText = activeElnow.value.substring(start, end).trim();
+                    }
+                } else {
+                    selText = window.getSelection()?.toString().trim();
+                }
+
+                if (!selText || selText.length < 5) {
                     setVisible(false);
                     setShowCustom(false);
                 }
@@ -27,24 +52,43 @@ export default function TextSelectionToolbar({ containerRef, onTransform }) {
 
         // Check if selection is within the report container
         if (containerRef?.current) {
-            const range = selection.getRangeAt(0);
             const container = containerRef.current;
-            if (!container.contains(range.commonAncestorContainer)) {
-                return;
+            if (isTextarea) {
+                if (activeEl !== container) return;
+            } else {
+                const selection = window.getSelection();
+                if (selection.rangeCount > 0) {
+                    const range = selection.getRangeAt(0);
+                    if (!container.contains(range.commonAncestorContainer)) {
+                        return;
+                    }
+                }
             }
         }
 
-        const range = selection.getRangeAt(0);
-        const rect = range.getBoundingClientRect();
+        if (isTextarea) {
+            // For textarea, position near the cursor event
+            const x = e && e.clientX ? e.clientX : position.left;
+            const y = e && e.clientY ? e.clientY : position.top;
+            setPosition({
+                top: Math.max(0, y - 50),
+                left: x,
+            });
+        } else {
+            const selection = window.getSelection();
+            if (selection.rangeCount > 0) {
+                const range = selection.getRangeAt(0);
+                rect = range.getBoundingClientRect();
+                setPosition({
+                    top: Math.max(0, rect.top - 50),
+                    left: rect.left + rect.width / 2,
+                });
+            }
+        }
 
-        // Use viewport-relative coords (fixed positioning inside fixed modal)
         setSelectedText(text);
-        setPosition({
-            top: rect.top - 50,
-            left: rect.left + rect.width / 2,
-        });
         setVisible(true);
-    }, [containerRef]);
+    }, [containerRef, position.left, position.top]);
 
     useEffect(() => {
         document.addEventListener("mouseup", handleSelectionChange);
@@ -55,7 +99,12 @@ export default function TextSelectionToolbar({ containerRef, onTransform }) {
         if (selectedText) {
             onTransform(selectedText, action);
             setVisible(false);
-            window.getSelection()?.removeAllRanges();
+            const activeEl = document.activeElement;
+            if (activeEl && activeEl.tagName === 'TEXTAREA') {
+                activeEl.setSelectionRange(0, 0); // clear textarea selection
+            } else {
+                window.getSelection()?.removeAllRanges();
+            }
         }
     };
 
@@ -65,7 +114,12 @@ export default function TextSelectionToolbar({ containerRef, onTransform }) {
             setVisible(false);
             setShowCustom(false);
             setCustomInstruction("");
-            window.getSelection()?.removeAllRanges();
+            const activeEl = document.activeElement;
+            if (activeEl && activeEl.tagName === 'TEXTAREA') {
+                activeEl.setSelectionRange(0, 0); // clear textarea selection
+            } else {
+                window.getSelection()?.removeAllRanges();
+            }
         }
     };
 
