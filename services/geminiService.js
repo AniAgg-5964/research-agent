@@ -332,25 +332,41 @@ ${query}
         onProgress("Gathering External Knowledge");
     }
 
+    const searchPromises = [];
+
     if (tavilyConfidence > TOOL_THRESHOLD) {
         console.log("Executing Tavily search");
-        webResults = await searchWeb(query);
-        console.log(`Tavily returned ${webResults.length} results`);
+        searchPromises.push(
+            searchWeb(query).then(res => {
+                webResults = res;
+                console.log(`Tavily returned ${webResults.length} results`);
+            })
+        );
     }
 
     if (arxivConfidence > TOOL_THRESHOLD) {
         console.log("Executing arXiv search");
-        arxivResults = await searchArxiv(query);
-        console.log(`arXiv returned ${arxivResults.length} papers:`);
-        arxivResults.forEach((paper, i) => console.log(`${i + 1}. ${paper.title}`));
+        searchPromises.push(
+            searchArxiv(query).then(res => {
+                arxivResults = res;
+                console.log(`arXiv returned ${arxivResults.length} papers:`);
+                arxivResults.forEach((paper, i) => console.log(`${i + 1}. ${paper.title}`));
+            })
+        );
     }
 
     if (githubConfidence > TOOL_THRESHOLD) {
         console.log("Executing GitHub search");
-        githubResults = await searchGitHub(query);
-        console.log(`GitHub returned ${githubResults.length} repositories:`);
-        githubResults.forEach((repo, i) => console.log(`${i + 1}. ${repo.name}`));
+        searchPromises.push(
+            searchGitHub(query).then(res => {
+                githubResults = res;
+                console.log(`GitHub returned ${githubResults.length} repositories:`);
+                githubResults.forEach((repo, i) => console.log(`${i + 1}. ${repo.name}`));
+            })
+        );
     }
+
+    await Promise.all(searchPromises);
 
     // ====================================================
     // TOOL CONTEXT
