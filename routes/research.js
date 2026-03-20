@@ -5,6 +5,7 @@ const { runQuickResearch, runDeepResearch } = require("../services/geminiService
 const { storeMemory, searchMemory } = require("../services/memoryService");
 const { runGroqPrompt } = require("../services/groqService");
 const Message = require("../models/Message");
+const ResearchSession = require("../models/ResearchSession");
 
 router.post("/", async (req, res) => {
   try {
@@ -19,6 +20,12 @@ router.post("/", async (req, res) => {
 
     const emitProgress = (stage, status = "running") => {
       res.write(JSON.stringify({ type: "progress", stage, status }) + "\n");
+      // Persist pipeline stage to MongoDB so frontend can restore on refresh
+      if (sessionId) {
+        ResearchSession.findByIdAndUpdate(sessionId, { $set: { pipelineStage: stage } }).catch(err => {
+          console.error("Failed to persist pipeline stage:", err.message);
+        });
+      }
     };
 
     // ===========================
@@ -99,6 +106,21 @@ router.post("/", async (req, res) => {
       if (aiResponse.clarificationNeeded) {
         console.log("Agent requested clarification");
 
+        if (sessionId) {
+          try {
+            await ResearchSession.findByIdAndUpdate(sessionId, {
+              $set: {
+                clarificationNeeded: true,
+                clarificationQuestions: aiResponse.questions,
+                clarificationDepth: clarificationDepth || 0,
+                pipelineStage: "waiting_for_clarification"
+              }
+            });
+          } catch (err) {
+            console.error("Failed to save clarification state to session:", err.message);
+          }
+        }
+
         res.write(JSON.stringify({
           type: "clarification",
           data: {
@@ -108,6 +130,23 @@ router.post("/", async (req, res) => {
           }
         }) + "\n");
         return res.end();
+      }
+
+      // Deep research succeeded without further clarification
+      if (sessionId) {
+        try {
+          await ResearchSession.findByIdAndUpdate(sessionId, {
+            $set: {
+              clarificationNeeded: false,
+              clarificationQuestions: [],
+              clarificationDepth: 0,
+              report: aiResponse.answer || "",
+              pipelineStage: ""
+            }
+          });
+        } catch (err) {
+          console.error("Failed to clear clarification state from session:", err.message);
+        }
       }
 
       // ===========================

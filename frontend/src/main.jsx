@@ -21,6 +21,11 @@ createRoot(document.getElementById('root')).render(
             <Workspace />
           </AuthGuard>
         } />
+        <Route path="/workspace/:sessionId" element={
+          <AuthGuard>
+            <Workspace />
+          </AuthGuard>
+        } />
       </Routes>
     </BrowserRouter>
   </StrictMode>,

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import "./App.css";
 import "katex/dist/katex.min.css";
 
@@ -16,6 +16,7 @@ const SESSION_API = "http://localhost:5000/api/session";
 
 function ResearchWorkspace() {
     const navigate = useNavigate();
+    const { sessionId: routeSessionId } = useParams();
 
     // User profile
     const storedUser = JSON.parse(localStorage.getItem("user") || "null");
@@ -96,6 +97,13 @@ function ResearchWorkspace() {
         }
     }, [token]);
 
+    useEffect(() => {
+        if (token && routeSessionId && routeSessionId !== activeSessionId) {
+            handleSelectSession(routeSessionId);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token, routeSessionId]);
+
     const fetchSessions = async () => {
         try {
             const res = await fetch(`${SESSION_API}/list`, { headers: authHeaders });
@@ -125,6 +133,7 @@ function ResearchWorkspace() {
         setSelectionResult(null);
         setClarificationNeeded(false);
         setPipelineSteps([]);
+        navigate("/workspace");
     };
 
     const handleDeleteSession = async (sessionId) => {
@@ -147,6 +156,10 @@ function ResearchWorkspace() {
         if (loadingSessionRef.current === sessionId) return;
         loadingSessionRef.current = sessionId;
 
+        if (routeSessionId !== sessionId) {
+            navigate(`/workspace/${sessionId}`);
+        }
+
         setActiveSessionId(sessionId);
         setSessionLoading(true);
         setResponse("");
@@ -165,11 +178,71 @@ function ResearchWorkspace() {
             setSessionMessages(data.messages || []);
             setActiveSession(data.session || null);
 
-            // Show the last assistant message as the current response
-            const lastAssistant = [...(data.messages || [])].reverse().find(m => m.role === "assistant" && m.type !== "followup");
-            if (lastAssistant) {
-                setResponse(lastAssistant.content);
-                setOriginalReport(lastAssistant.content);
+            // Restore Clarification State if active
+            if (data.session && data.session.clarificationNeeded) {
+                setClarificationNeeded(true);
+                setQuestions(data.session.clarificationQuestions || []);
+                setAnswers(new Array((data.session.clarificationQuestions || []).length).fill(null));
+                setClarificationDepth(data.session.clarificationDepth || 1);
+            }
+
+            // Restore Report State if available, otherwise fallback to last assistant message
+            if (data.session && data.session.report) {
+                setResponse(data.session.report);
+                setOriginalReport(data.session.report);
+            } else {
+                // Show the last assistant message as the current response
+                const lastAssistant = [...(data.messages || [])].reverse().find(m => m.role === "assistant" && m.type !== "followup");
+                if (lastAssistant) {
+                    setResponse(lastAssistant.content);
+                    setOriginalReport(lastAssistant.content);
+                }
+            }
+
+            // Restore Quick Take
+            if (data.session && data.session.quickTake) {
+                setQuickTake(data.session.quickTake);
+            }
+
+            // Restore Pipeline Stage (if pipeline was running when page refreshed)
+            if (data.session && data.session.pipelineStage && data.session.pipelineStage !== "") {
+                const STAGE_ORDER = [
+                    "Retrieving Relevant Memory",
+                    "Planning Research Strategy",
+                    "Analyzing Plan",
+                    "Gathering External Knowledge",
+                    "Generating Research Report",
+                    "Saving Knowledge to Memory",
+                ];
+                const stageIdx = STAGE_ORDER.indexOf(data.session.pipelineStage);
+                if (stageIdx !== -1) {
+                    // Build up completed steps + current active step
+                    const restoredSteps = [];
+                    for (let i = 0; i <= stageIdx; i++) {
+                        restoredSteps.push({ stage: STAGE_ORDER[i], status: "running" });
+                    }
+                    setPipelineSteps(restoredSteps);
+                    setLoading(true);
+                } else if (data.session.pipelineStage === "waiting_for_clarification") {
+                    // Pipeline paused for clarification — show pipeline at "Analyzing Plan" stage
+                    setPipelineSteps([
+                        { stage: "Retrieving Relevant Memory", status: "running" },
+                        { stage: "Planning Research Strategy", status: "running" },
+                        { stage: "Analyzing Plan", status: "running" },
+                    ]);
+                }
+            }
+
+            // Restore Pending Transform State
+            if (data.session && data.session.pendingTransform) {
+                const pt = data.session.pendingTransform;
+                if (pt.type === "full") {
+                    setTransformResult(pt.result);
+                    setActiveAction(pt.action || "custom");
+                } else if (pt.type === "selection") {
+                    setSelectionResult(pt.result);
+                    setSelectionSource(pt.source);
+                }
             }
 
             // Set query to last user message
@@ -206,6 +279,7 @@ function ResearchWorkspace() {
             });
             const data = await res.json();
             setActiveSessionId(data.id);
+            navigate(`/workspace/${data.id}`);
             await fetchSessions();
             return data.id;
         } catch (err) {
@@ -378,6 +452,19 @@ function ResearchWorkspace() {
     // ==================
     // Report transform (full report actions)
     // ==================
+    const savePendingTransform = async (pendingState) => {
+        if (!activeSessionId) return;
+        try {
+            await fetch(`${SESSION_API}/${activeSessionId}/pending-transform`, {
+                method: "PUT",
+                headers: authHeaders,
+                body: JSON.stringify({ pendingTransform: pendingState }),
+            });
+        } catch (e) {
+            console.error("Failed to persist pending transform:", e);
+        }
+    };
+
     const handleReportAction = useCallback(
         async (action) => {
             if (!response) return;
@@ -391,28 +478,48 @@ function ResearchWorkspace() {
                     body: JSON.stringify({ text: response, action }),
                 });
                 const data = await res.json();
-                setTransformResult(data.result || null);
+                const resText = data.result || null;
+                setTransformResult(resText);
+                if (resText) {
+                    savePendingTransform({ type: "full", action, result: resText });
+                }
             } catch {
                 console.error("Transform failed");
             }
 
             setActionLoading(false);
         },
-        [response]
+        [response, activeSessionId]
     );
 
-    const acceptTransform = () => {
+    const acceptTransform = async () => {
         if (transformResult) {
-            setResponse(transformResult);
-            setOriginalReport(transformResult);
+            const newReport = transformResult;
+            setResponse(newReport);
+            setOriginalReport(newReport);
             setTransformResult(null);
             setActiveAction("");
+            savePendingTransform(null);
+
+            // Persist report edits
+            if (activeSessionId) {
+                try {
+                    await fetch(`${SESSION_API}/${activeSessionId}/report`, {
+                        method: "PUT",
+                        headers: authHeaders,
+                        body: JSON.stringify({ report: newReport }),
+                    });
+                } catch (e) {
+                    console.error("Failed to persist report:", e);
+                }
+            }
         }
     };
 
     const rejectTransform = () => {
         setTransformResult(null);
         setActiveAction("");
+        savePendingTransform(null);
     };
 
     // ==================
@@ -430,14 +537,18 @@ function ResearchWorkspace() {
                     body: JSON.stringify({ text: selectedText, action, instruction }),
                 });
                 const data = await res.json();
-                setSelectionResult(data.result || null);
+                const resText = data.result || null;
+                setSelectionResult(resText);
+                if (resText) {
+                    savePendingTransform({ type: "selection", action, source: selectedText, result: resText });
+                }
             } catch {
                 console.error("Selection transform failed");
             }
 
             setActionLoading(false);
         },
-        []
+        [activeSessionId]
     );
 
     // ==================
@@ -457,7 +568,7 @@ function ResearchWorkspace() {
         }
     };
 
-    const acceptSelection = () => {
+    const acceptSelection = async () => {
         if (selectionResult && selectionSource) {
             const updated = smartReplace(response, selectionSource, selectionResult);
             console.log("Applying text edit:", { source: selectionSource, result: selectionResult, updatedLength: updated.length });
@@ -465,12 +576,27 @@ function ResearchWorkspace() {
             setOriginalReport(updated);
             setSelectionResult(null);
             setSelectionSource("");
+            savePendingTransform(null);
+
+            // Persist report edits
+            if (activeSessionId) {
+                try {
+                    await fetch(`${SESSION_API}/${activeSessionId}/report`, {
+                        method: "PUT",
+                        headers: authHeaders,
+                        body: JSON.stringify({ report: updated }),
+                    });
+                } catch (e) {
+                    console.error("Failed to persist report:", e);
+                }
+            }
         }
     };
 
     const rejectSelection = () => {
         setSelectionResult(null);
         setSelectionSource("");
+        savePendingTransform(null);
     };
 
     // ==================
@@ -615,6 +741,19 @@ function ResearchWorkspace() {
                                 onAcceptSelection={acceptSelection}
                                 onRejectSelection={rejectSelection}
                                 onExport={handleExport}
+                                clarificationNeeded={clarificationNeeded}
+                                questions={questions}
+                                answers={answers}
+                                onAnswerChange={(i, val) => {
+                                    const updated = [...answers];
+                                    updated[i] = val;
+                                    setAnswers(updated);
+                                }}
+                                onSubmitClarification={submitClarifications}
+                                pipelineActive={loading}
+                                pipelineSteps={pipelineSteps}
+                                pipelinePaused={clarificationNeeded}
+                                quickTake={quickTake}
                             />
                         )}
                     </>

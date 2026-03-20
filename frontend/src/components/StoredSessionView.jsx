@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
-import { FiZap, FiFileText, FiChevronDown, FiChevronUp } from "react-icons/fi";
+import { FiZap, FiFileText, FiChevronDown, FiChevronUp, FiMessageSquare } from "react-icons/fi";
 import FollowUpChat from "./FollowUpChat";
 import ReportViewer from "./ReportViewer";
+import PipelineProgress from "./PipelineProgress";
 
 export default function StoredSessionView({
     session,
@@ -23,10 +24,34 @@ export default function StoredSessionView({
     onAcceptSelection,
     onRejectSelection,
     onExport,
+    // New props for refresh resilience
+    clarificationNeeded = false,
+    questions = [],
+    answers = [],
+    onAnswerChange,
+    onSubmitClarification,
+    pipelineActive = false,
+    pipelineSteps = [],
+    pipelinePaused = false,
+    quickTake: quickTakeProp,
 }) {
     const [followupMessages, setFollowupMessages] = useState([]);
-    const [reportOpen, setReportOpen] = useState(false);
     const [quickTakeOpen, setQuickTakeOpen] = useState(false);
+
+    // Persist report modal state in sessionStorage so it survives refresh
+    const reportStorageKey = `reportOpen_${session.id}`;
+    const [reportOpen, setReportOpen] = useState(() => {
+        return sessionStorage.getItem(reportStorageKey) === "true";
+    });
+
+    const toggleReportOpen = (open) => {
+        setReportOpen(open);
+        if (open) {
+            sessionStorage.setItem(reportStorageKey, "true");
+        } else {
+            sessionStorage.removeItem(reportStorageKey);
+        }
+    };
 
     useEffect(() => {
         const followups = messages.filter(m => m.type === "followup");
@@ -36,6 +61,9 @@ export default function StoredSessionView({
     const fullReport = reportText || [...messages]
         .filter(m => m.role === "assistant" && m.type !== "followup")
         .pop()?.content || "";
+
+    // Use quickTake prop if available, otherwise fall back to session.quickTake
+    const quickTakeText = quickTakeProp || session.quickTake || "";
 
     const handleNewMessage = (msg) => {
         setFollowupMessages(prev => [...prev, msg]);
@@ -58,7 +86,7 @@ export default function StoredSessionView({
                 <p className="session-date">{formatDate(session.createdAt)}</p>
 
                 <div className="session-title-actions">
-                    {session.quickTake && (
+                    {quickTakeText && (
                         <button
                             className="btn-ghost btn-sm"
                             onClick={() => setQuickTakeOpen(!quickTakeOpen)}
@@ -72,7 +100,7 @@ export default function StoredSessionView({
                     {fullReport && (
                         <button
                             className="btn-ghost btn-sm"
-                            onClick={() => setReportOpen(true)}
+                            onClick={() => toggleReportOpen(true)}
                             id="session-view-report-btn"
                         >
                             <FiFileText className="inline-icon" /> Full Report
@@ -82,14 +110,43 @@ export default function StoredSessionView({
             </div>
 
             {/* Quick Take — expandable inline */}
-            {quickTakeOpen && session.quickTake && (
+            {quickTakeOpen && quickTakeText && (
                 <div className="session-quicktake-inline">
                     <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
-                        {session.quickTake}
+                        {quickTakeText}
                     </ReactMarkdown>
                 </div>
             )}
 
+            {/* Pipeline Progress — shown if pipeline is active or paused for clarification */}
+            <PipelineProgress active={pipelineActive} steps={pipelineSteps} paused={pipelinePaused} />
+
+            {/* Clarification Questions — restored from backend */}
+            {clarificationNeeded && (
+                <div className="clarification-box">
+                    <h3><FiMessageSquare className="inline-icon" /> Agent needs clarification</h3>
+                    {questions.map((q, i) => (
+                        <div key={i} className="question-block">
+                            <p>{q.question}</p>
+                            {q.options.map((option, j) => (
+                                <label key={j} className="option-label">
+                                    <input
+                                        type="radio"
+                                        name={`session-question-${i}`}
+                                        value={option}
+                                        checked={answers[i] === option}
+                                        onChange={() => onAnswerChange && onAnswerChange(i, option)}
+                                    />
+                                    {option}
+                                </label>
+                            ))}
+                        </div>
+                    ))}
+                    <button className="run-btn" onClick={onSubmitClarification}>
+                        Submit Answers
+                    </button>
+                </div>
+            )}
 
             {/* Follow-Up Chat */}
             <FollowUpChat
@@ -102,7 +159,7 @@ export default function StoredSessionView({
             {/* Full Report Modal */}
             <ReportViewer
                 isOpen={reportOpen}
-                onClose={() => setReportOpen(false)}
+                onClose={() => toggleReportOpen(false)}
                 reportText={fullReport}
                 onAction={onReportAction}
                 actionLoading={actionLoading}

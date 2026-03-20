@@ -127,6 +127,13 @@ router.get("/:id", authMiddleware, async (req, res) => {
                 title: session.title,
                 createdAt: session.createdAt,
                 quickTake: session.quickTake || "",
+                report: session.report || "",
+                clarificationNeeded: session.clarificationNeeded || false,
+                clarificationQuestions: session.clarificationQuestions || [],
+                clarificationDepth: session.clarificationDepth || 0,
+                partialPipelineState: session.partialPipelineState || {},
+                pendingTransform: session.pendingTransform || null,
+                pipelineStage: session.pipelineStage || "",
             },
             messages,
         });
@@ -146,7 +153,7 @@ router.put("/:id/summary", authMiddleware, async (req, res) => {
 
         const session = await ResearchSession.findOneAndUpdate(
             { _id: req.params.id, userId: req.user.id },
-            { quickTake: quickTake || "" },
+            { $set: { quickTake: quickTake || "" } },
             { returnDocument: "after" }
         );
 
@@ -159,6 +166,90 @@ router.put("/:id/summary", authMiddleware, async (req, res) => {
     } catch (error) {
         console.error("Save summary error:", error.message);
         res.status(500).json({ error: "Failed to save summary." });
+    }
+});
+
+// ===========================
+// PUT /api/session/:id/report
+// Persist report edits
+// ===========================
+router.put("/:id/report", authMiddleware, async (req, res) => {
+    try {
+        const { report } = req.body;
+
+        const session = await ResearchSession.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user.id },
+            { $set: { report: report || "" } },
+            { new: true }
+        );
+
+        if (!session) {
+            return res.status(404).json({ error: "Session not found." });
+        }
+
+        console.log(`[Session] Saved report for session ${req.params.id}`);
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Save report error:", error.message);
+        res.status(500).json({ error: "Failed to save report." });
+    }
+});
+
+// ===========================
+// PUT /api/session/:id/clarification
+// Persist clarification state
+// ===========================
+router.put("/:id/clarification", authMiddleware, async (req, res) => {
+    try {
+        const { clarificationNeeded, clarificationQuestions, clarificationDepth, partialPipelineState } = req.body;
+
+        const session = await ResearchSession.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user.id },
+            {
+                $set: {
+                    clarificationNeeded: !!clarificationNeeded,
+                    clarificationQuestions: clarificationQuestions || [],
+                    clarificationDepth: clarificationDepth || 0,
+                    partialPipelineState: partialPipelineState || {}
+                }
+            },
+            { new: true }
+        );
+
+        if (!session) {
+            return res.status(404).json({ error: "Session not found." });
+        }
+
+        console.log(`[Session] Saved clarification state for session ${req.params.id}`);
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Save clarification error:", error.message);
+        res.status(500).json({ error: "Failed to save clarification state." });
+    }
+});
+
+// ===========================
+// PUT /api/session/:id/pending-transform
+// Persist pending edit state
+// ===========================
+router.put("/:id/pending-transform", authMiddleware, async (req, res) => {
+    try {
+        const { pendingTransform } = req.body;
+
+        const session = await ResearchSession.findOneAndUpdate(
+            { _id: req.params.id, userId: req.user.id },
+            { $set: { pendingTransform: pendingTransform || null } },
+            { new: true }
+        );
+
+        if (!session) {
+            return res.status(404).json({ error: "Session not found." });
+        }
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Save pending transform error:", error.message);
+        res.status(500).json({ error: "Failed to save pending transform." });
     }
 });
 
