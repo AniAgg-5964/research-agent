@@ -15,17 +15,54 @@ const ai = new GoogleGenAI({
 async function callModelWithRetry(config, retries = 3) {
     for (let i = 0; i < retries; i++) {
         try {
-            return await ai.models.generateContent(config);
+            console.log(`[Gemini] Calling model ${config.model} (attempt ${i + 1}/${retries})...`);
+            const response = await ai.models.generateContent(config);
+
+            // Safely extract text — the .text getter can throw if no valid candidates
+            let text;
+            try {
+                text = response.text;
+            } catch (textErr) {
+                console.error(`[Gemini] response.text threw:`, textErr.message);
+                text = null;
+            }
+
+            if (!text) {
+                console.warn(`[Gemini] Empty response from model on attempt ${i + 1}`);
+                if (i < retries - 1) {
+                    await new Promise(res => setTimeout(res, 2000));
+                    continue;
+                }
+                return {
+                    text: "Error: Model returned an empty response after all retries.",
+                    usageMetadata: response.usageMetadata || null
+                };
+            }
+
+            console.log(`[Gemini] Success — response length: ${text.length} chars`);
+            return { text, usageMetadata: response.usageMetadata || null };
+
         } catch (err) {
             if (i < retries - 1) {
-                const delay = (i === 0) ? 2000 : 4000; // 2s on attempt 2, 4s on attempt 3
-                console.warn(`LLM request failed (Attempt ${i + 1}/${retries}). Retrying in ${delay}ms...`, err.message);
+                const delay = (i === 0) ? 2000 : 4000;
+                console.warn(`[Gemini] Request failed (attempt ${i + 1}/${retries}): ${err.message}. Retrying in ${delay}ms...`);
                 await new Promise(res => setTimeout(res, delay));
             } else {
-                console.error(`LLM request failed after ${retries} attempts:`, err.message);
-                // gracefully return an error message
+                console.warn(`[Gemini] Model ${config.model} unavailable after ${retries} attempts (${err.message}). Falling back to Groq (Qwen 3.8)...`);
+                try {
+                    const fallbackPrompt = typeof config.contents === "string" ? config.contents : JSON.stringify(config.contents);
+                    const groqRes = await runGroqPrompt(fallbackPrompt);
+                    if (groqRes && !groqRes.startsWith("Error:")) {
+                        console.log(`[Groq Fallback] Success — generated ${groqRes.length} chars`);
+                        return { text: groqRes, usageMetadata: { totalTokenCount: 1500 } };
+                    }
+                } catch (fallbackErr) {
+                    console.error("[Groq Fallback] Fallback execution error:", fallbackErr.message);
+                }
+
+                console.error(`[Gemini] Request failed after ${retries} attempts:`, err.message);
                 return {
-                    text: `Error: Could not retrieve response after ${retries} attempts due to network or API issue.`,
+                    text: `Error: Could not retrieve response after ${retries} attempts. (${err.message})`,
                     usageMetadata: null
                 };
             }
@@ -83,6 +120,7 @@ instead of asking clarification questions.
 
 async function runQuickResearch(query, persona = "architect") {
 
+    console.log("[Quick Mode] Starting quick research...");
     const personaInstruction = getPersonaInstruction(persona);
 
     const response = await callModelWithRetry({
@@ -98,6 +136,8 @@ Query:
 ${query}
 `
     });
+
+    console.log("[Quick Mode] Response received, answer length:", response.text?.length || 0);
 
     return {
         answer: response.text,
@@ -118,6 +158,7 @@ async function runDeepResearch(
     onProgress = () => { }
 ) {
 
+    const safeProgress = typeof onProgress === "function" ? onProgress : () => { };
     const personaInstruction = getPersonaInstruction(persona);
 
     const safeMemory =
@@ -130,7 +171,7 @@ async function runDeepResearch(
     // ====================================================
 
     console.log("LLM CALL 1 — Research Planner");
-    onProgress("Planning Research Strategy");
+    safeProgress("Planning Research Strategy");
 
     const plannerResponse = await callModelWithRetry({
         model: "models/gemini-2.5-flash-lite",
@@ -160,12 +201,23 @@ ${query}
 
     const plannerOutput = plannerResponse.text;
 
+    // Short-circuit if planner failed
+    if (!plannerOutput || plannerOutput.startsWith("Error:")) {
+        console.error("[Deep Mode] Planner failed:", plannerOutput);
+        return {
+            answer: plannerOutput || "Error: Research planner returned no output.",
+            memorySummary: null,
+            usage: { totalTokenCount: 0 },
+            reasoning: { planner: plannerOutput, tools: { web: 0, arxiv: 0, github: 0 } }
+        };
+    }
+
     // ====================================================
     // LLM CALL 2 — REFLECTION (Groq)
     // ====================================================
 
     console.log("LLM CALL 2 — Reflection Agent");
-    onProgress("Analyzing Plan");
+    safeProgress("Analyzing Plan");
 
     const reflection = await runGroqPrompt(`
 You are a critical research reviewer.
@@ -329,7 +381,7 @@ ${query}
     // execute tools
 
     if (tavilyConfidence > TOOL_THRESHOLD || arxivConfidence > TOOL_THRESHOLD || githubConfidence > TOOL_THRESHOLD) {
-        onProgress("Gathering External Knowledge");
+        safeProgress("Gathering External Knowledge");
     }
 
     const searchPromises = [];
@@ -372,19 +424,30 @@ ${query}
     // TOOL CONTEXT
     // ====================================================
 
+    const webFormatted = webResults.length > 0
+        ? webResults.map(r => `- [${r.title}](${r.url})\n  ${r.content}`).join("\n\n")
+        : "None retrieved";
+
+    const arxivFormatted = arxivResults.length > 0
+        ? arxivResults.map(p => `- **[${p.title}](${p.url})**\n  *Abstract / Findings:* ${p.summary}`).join("\n\n")
+        : "None retrieved";
+
+    const githubFormatted = githubResults.length > 0
+        ? githubResults.map(g => `- **[${g.name}](${g.url})** (${g.stars || 0}★)\n  *Description:* ${g.description}`).join("\n\n")
+        : "None retrieved";
+
     const toolContextDraft = `
+### Academic Research Papers (arXiv):
+${arxivFormatted}
 
-Web Results:
-${webResults.map(r => `- ${r.title}: ${r.content}`).join("\n")}
+### Open Source Implementations (GitHub):
+${githubFormatted}
 
-arXiv Papers:
-${arxivResults.map(p => `- ${p.title}: ${p.summary}`).join("\n")}
-
-GitHub Repositories:
-${githubResults.map(g => `- ${g.name}: ${g.description}`).join("\n")}
+### Web Articles & Sources:
+${webFormatted}
 `;
 
-    const MAX_PROMPT_CHARS = 12000;
+    const MAX_PROMPT_CHARS = 14000;
     const toolContext = toolContextDraft.length > MAX_PROMPT_CHARS
         ? toolContextDraft.substring(0, MAX_PROMPT_CHARS) + "\n...[TRUNCATED TO PREVENT PROMPT OVERFLOW]"
         : toolContextDraft;
@@ -394,7 +457,7 @@ ${githubResults.map(g => `- ${g.name}: ${g.description}`).join("\n")}
     // ====================================================
 
     console.log("LLM CALL 4 — Final Research Report");
-    onProgress("Generating Research Report");
+    safeProgress("Generating Research Report");
 
     const reportResponse = await callModelWithRetry({
         model: "models/gemini-2.5-flash-lite",
@@ -403,7 +466,7 @@ You are a senior research assistant.
 
 ${personaInstruction}
 
-Use:
+Use the following materials to produce an authoritative, exhaustive research report:
 
 Memory Context:
 ${safeMemory}
@@ -411,34 +474,69 @@ ${safeMemory}
 Planner Output:
 ${plannerOutput}
 
-External Sources:
+Retrieved External Sources (arXiv Papers, GitHub Repos, and Web Sources):
 ${toolContext}
 
 Research Question:
 ${query}
 
-Generate a structured research report.
-
-End with confidence score.
+Instructions for the report:
+1. Provide a comprehensive, executive-level technical breakdown with detailed architecture layers and trade-offs.
+2. Directly discuss and cite the retrieved arXiv research papers and GitHub repositories in the body of the report where relevant.
+3. Include structured sections at the end:
+   - "### 📚 Academic Research Papers (arXiv)" — with clickable Markdown links [Paper Title](url), findings, and why they matter.
+   - "### 💻 Open Source Implementations (GitHub)" — with clickable Markdown links [owner/repo](url), stars, and architectural purpose.
+   - "### 🌐 External Web References" — with clickable links.
+4. Conclude with actionable recommendations and a confidence score.
 `
     });
+
+    let finalAnswer = reportResponse.text;
+
+    // Ensure retrieved arXiv papers & GitHub repos are always prominently listed with links
+    if (finalAnswer && !finalAnswer.startsWith("Error:")) {
+        const hasArxivLinks = finalAnswer.includes("arxiv.org") || (arxivResults.length === 0);
+        const hasGithubLinks = finalAnswer.includes("github.com") || (githubResults.length === 0);
+
+        if (!hasArxivLinks || !hasGithubLinks) {
+            let sourcesSection = "\n\n---\n\n## 🔬 Retrieved Research & Open Source Implementations\n";
+            if (arxivResults.length > 0) {
+                sourcesSection += "\n### 📚 Academic Research Papers (arXiv)\n" +
+                    arxivResults.map(p => `- **[${p.title}](${p.url})**\n  > ${p.summary}`).join("\n\n");
+            }
+            if (githubResults.length > 0) {
+                sourcesSection += "\n\n### 💻 Open Source Implementations (GitHub)\n" +
+                    githubResults.map(g => `- **[${g.name}](${g.url})** (${g.stars || 0}★)\n  > ${g.description}`).join("\n\n");
+            }
+            if (webResults.length > 0) {
+                sourcesSection += "\n\n### 🌐 Web Sources & Articles\n" +
+                    webResults.map(r => `- [${r.title}](${r.url})`).join("\n");
+            }
+            finalAnswer += sourcesSection;
+        }
+    }
 
     // ====================================================
     // LLM CALL 5 — MEMORY COMPRESSION
     // ====================================================
 
-    console.log("LLM CALL 5 — Memory Compression");
-
-    const summary = await runGroqPrompt(`
+    let summary = null;
+    if (finalAnswer && !finalAnswer.startsWith("Error:")) {
+        console.log("LLM CALL 5 — Memory Compression");
+        const rawSummary = await runGroqPrompt(`
 Summarize the research below into
 5 durable insights.
 
-${reportResponse.text}
+${finalAnswer}
 `);
+        if (rawSummary && !rawSummary.startsWith("Error:")) {
+            summary = rawSummary;
+        }
+    }
 
     return {
 
-        answer: reportResponse.text,
+        answer: finalAnswer,
 
         memorySummary: summary,
 

@@ -54,30 +54,33 @@ function SessionSidebar({ sessions, activeSessionId, onSelectSession, onNewSessi
                             <p className="sidebar-empty-hint">Start a new research to begin.</p>
                         </div>
                     )}
-                    {sessions.map(s => (
-                        <div
-                            key={s._id}
-                            className={`session-item ${activeSessionId === s._id ? "active" : ""}`}
-                            onClick={() => onSelectSession(s._id)}
-                            title={s.title}
-                        >
-                            <div className="session-item-title">{s.title}</div>
-                            <div className="session-item-bottom">
-                                <div className="session-item-meta">
-                                    <FiClock className="session-meta-icon" />
-                                    <span>{formatDate(s.createdAt)}</span>
+                    {sessions.map(s => {
+                        const sid = s._id || s.id;
+                        return (
+                            <div
+                                key={sid}
+                                className={`session-item ${activeSessionId === sid ? "active" : ""}`}
+                                onClick={() => onSelectSession(sid)}
+                                title={s.title}
+                            >
+                                <div className="session-item-title">{s.title}</div>
+                                <div className="session-item-bottom">
+                                    <div className="session-item-meta">
+                                        <FiClock className="session-meta-icon" />
+                                        <span>{formatDate(s.createdAt)}</span>
+                                    </div>
+                                    <button
+                                        className="session-delete-btn"
+                                        onClick={(e) => handleDelete(e, sid)}
+                                        title="Delete session"
+                                        id={`delete-session-${sid}`}
+                                    >
+                                        <FiTrash2 />
+                                    </button>
                                 </div>
-                                <button
-                                    className="session-delete-btn"
-                                    onClick={(e) => handleDelete(e, s._id)}
-                                    title="Delete session"
-                                    id={`delete-session-${s._id}`}
-                                >
-                                    <FiTrash2 />
-                                </button>
                             </div>
-                        </div>
-                    ))}
+                        );
+                    })}
                 </div>
             )}
         </div>

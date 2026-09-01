@@ -24,10 +24,16 @@ export default function NotesPanel({ isOpen, onToggle, query }) {
             setSelectionSource(selectedText);
             setActionLoading(true);
 
+            const token = localStorage.getItem("token");
+            const BACKEND_URL = import.meta.env.VITE_API_BASE || "http://localhost:5000";
+
             try {
-                const res = await fetch(`http://localhost:5000/research/transform`, {
+                const res = await fetch(`${BACKEND_URL}/research/transform`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: {
+                        "Content-Type": "application/json",
+                        ...(token ? { "Authorization": `Bearer ${token}` } : {})
+                    },
                     body: JSON.stringify({ text: selectedText, action, instruction }),
                 });
                 const data = await res.json();

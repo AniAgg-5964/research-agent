@@ -1,4 +1,5 @@
 const express = require("express");
+const crypto = require("crypto");
 const router = express.Router();
 
 const { runQuickResearch, runDeepResearch } = require("../services/geminiService");
@@ -53,6 +54,35 @@ router.post("/", async (req, res) => {
       }
     }
 
+    if (sessionId) {
+      try {
+        // Ensure session exists in MongoDB with current user ownership
+        if (req.user?.id) {
+          const existingSession = await ResearchSession.findById(sessionId);
+          if (!existingSession) {
+            await ResearchSession.create({
+              _id: sessionId,
+              userId: req.user.id,
+              title: query.substring(0, 60),
+            });
+            console.log(`[Session] Created missing session document for ${sessionId}`);
+          }
+        }
+
+        const existingUserMsg = await Message.findOne({ sessionId, role: "user", content: query });
+        if (!existingUserMsg) {
+          await Message.create({
+            sessionId,
+            role: "user",
+            content: query,
+            type: "research"
+          });
+        }
+      } catch (userMsgErr) {
+        console.error("User message DB save warning:", userMsgErr.message);
+      }
+    }
+
     const enrichedQuery = contextPrefix + query;
 
     let aiResponse;
@@ -64,12 +94,16 @@ router.post("/", async (req, res) => {
       // 1️⃣ Search Similar Memory
       // ===========================
       emitProgress("Retrieving Relevant Memory");
-      const pastMemories = await searchMemory(enrichedQuery);
-
-      console.log(
-        "Raw retrieved memories:",
-        pastMemories.map(m => ({ score: m.score }))
-      );
+      let pastMemories = [];
+      try {
+        pastMemories = await searchMemory(enrichedQuery);
+        console.log(
+          "Raw retrieved memories:",
+          pastMemories.map(m => ({ score: m.score }))
+        );
+      } catch (memErr) {
+        console.error("Memory search failed (continuing without memory):", memErr.message);
+      }
 
       const SIMILARITY_THRESHOLD = 0.75;
 
@@ -132,41 +166,59 @@ router.post("/", async (req, res) => {
         return res.end();
       }
 
-      // Deep research succeeded without further clarification
-      if (sessionId) {
-        try {
-          await ResearchSession.findByIdAndUpdate(sessionId, {
-            $set: {
-              clarificationNeeded: false,
-              clarificationQuestions: [],
-              clarificationDepth: 0,
-              report: aiResponse.answer || "",
-              pipelineStage: ""
-            }
-          });
-        } catch (err) {
-          console.error("Failed to clear clarification state from session:", err.message);
-        }
-      }
-
       // ===========================
       // 4️⃣ Store Memory (Compressed)
       // ===========================
       if (aiResponse.memorySummary) {
         emitProgress("Saving Knowledge to Memory");
-        await storeMemory(
-          Date.now(),
-          aiResponse.memorySummary,
-          {
-            query,
-            summary: aiResponse.memorySummary,
-            fullReport: aiResponse.answer
-          }
-        );
+        try {
+          await storeMemory(
+            crypto.randomUUID(),
+            aiResponse.memorySummary,
+            {
+              query,
+              summary: aiResponse.memorySummary,
+              fullReport: aiResponse.answer
+            }
+          );
+        } catch (memErr) {
+          console.error("Memory storage failed (research still saved):", memErr.message);
+        }
       }
 
     } else {
+      console.log("[Route] Running QUICK mode for query:", query.substring(0, 60) + "...");
       aiResponse = await runQuickResearch(enrichedQuery, persona);
+      console.log("[Route] Quick mode complete, answer length:", aiResponse.answer?.length || 0);
+    }
+
+    // Persist completed research report and message to MongoDB session
+    if (sessionId && aiResponse?.answer && !aiResponse.answer.startsWith("Error:")) {
+      try {
+        await ResearchSession.findByIdAndUpdate(
+          sessionId,
+          {
+            $set: {
+              ...(req.user?.id ? { userId: req.user.id } : {}),
+              clarificationNeeded: false,
+              clarificationQuestions: [],
+              clarificationDepth: 0,
+              report: aiResponse.answer,
+              pipelineStage: ""
+            }
+          },
+          { upsert: true, new: true }
+        );
+        await Message.create({
+          sessionId,
+          role: "assistant",
+          content: aiResponse.answer,
+          type: "research"
+        });
+        console.log(`[Session] Persisted research report and assistant message to session ${sessionId}`);
+      } catch (err) {
+        console.error("Failed to persist report to session:", err.message);
+      }
     }
 
     // ===========================

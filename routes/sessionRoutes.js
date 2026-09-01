@@ -74,7 +74,8 @@ router.post("/create", authMiddleware, async (req, res) => {
         });
 
         res.status(201).json({
-            id: session._id,
+            id: session._id.toString(),
+            _id: session._id.toString(),
             title: session.title,
             createdAt: session.createdAt,
         });
@@ -91,10 +92,16 @@ router.get("/list", authMiddleware, async (req, res) => {
     try {
         const sessions = await ResearchSession.find({ userId: req.user.id })
             .sort({ createdAt: -1 })
-            .select("_id title createdAt quickTake")
+            .select("_id title createdAt quickTake report")
             .lean();
 
-        res.json(sessions);
+        const formatted = sessions.map(s => ({
+            ...s,
+            id: s._id.toString(),
+            _id: s._id.toString()
+        }));
+
+        res.json(formatted);
     } catch (error) {
         console.error("List sessions error:", error.message);
         res.status(500).json({ error: "Failed to list sessions." });
@@ -123,7 +130,8 @@ router.get("/:id", authMiddleware, async (req, res) => {
 
         res.json({
             session: {
-                id: session._id,
+                id: session._id.toString(),
+                _id: session._id.toString(),
                 title: session.title,
                 createdAt: session.createdAt,
                 quickTake: session.quickTake || "",
@@ -135,7 +143,7 @@ router.get("/:id", authMiddleware, async (req, res) => {
                 pendingTransform: session.pendingTransform || null,
                 pipelineStage: session.pipelineStage || "",
             },
-            messages,
+            messages: messages.map(m => ({ ...m, id: m._id.toString(), _id: m._id.toString() })),
         });
     } catch (error) {
         console.error("Get session error:", error.message);

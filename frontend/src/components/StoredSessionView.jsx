@@ -38,14 +38,16 @@ export default function StoredSessionView({
     const [followupMessages, setFollowupMessages] = useState([]);
     const [quickTakeOpen, setQuickTakeOpen] = useState(false);
 
+    const sessionId = session?.id || session?._id || "";
     // Persist report modal state in sessionStorage so it survives refresh
-    const reportStorageKey = `reportOpen_${session.id}`;
+    const reportStorageKey = `reportOpen_${sessionId}`;
     const [reportOpen, setReportOpen] = useState(() => {
-        return sessionStorage.getItem(reportStorageKey) === "true";
+        return sessionId ? sessionStorage.getItem(reportStorageKey) === "true" : false;
     });
 
     const toggleReportOpen = (open) => {
         setReportOpen(open);
+        if (!sessionId) return;
         if (open) {
             sessionStorage.setItem(reportStorageKey, "true");
         } else {
@@ -54,16 +56,16 @@ export default function StoredSessionView({
     };
 
     useEffect(() => {
-        const followups = messages.filter(m => m.type === "followup");
+        const followups = (messages || []).filter(m => m.type === "followup");
         setFollowupMessages(followups);
     }, [messages]);
 
-    const fullReport = reportText || [...messages]
+    const fullReport = reportText || [...(messages || [])]
         .filter(m => m.role === "assistant" && m.type !== "followup")
         .pop()?.content || "";
 
     // Use quickTake prop if available, otherwise fall back to session.quickTake
-    const quickTakeText = quickTakeProp || session.quickTake || "";
+    const quickTakeText = quickTakeProp || session?.quickTake || "";
 
     const handleNewMessage = (msg) => {
         setFollowupMessages(prev => [...prev, msg]);
@@ -71,19 +73,23 @@ export default function StoredSessionView({
 
     const formatDate = (dateStr) => {
         if (!dateStr) return "";
-        return new Date(dateStr).toLocaleDateString("en-US", {
-            month: "long",
-            day: "numeric",
-            year: "numeric",
-        });
+        try {
+            return new Date(dateStr).toLocaleDateString("en-US", {
+                month: "long",
+                day: "numeric",
+                year: "numeric",
+            });
+        } catch {
+            return "";
+        }
     };
 
     return (
         <div className="stored-session-view">
             {/* Session Title — clean typography, no card */}
             <div className="session-title-area">
-                <h1 className="session-title">{session.title}</h1>
-                <p className="session-date">{formatDate(session.createdAt)}</p>
+                <h1 className="session-title">{session?.title || "Research Workspace"}</h1>
+                <p className="session-date">{formatDate(session?.createdAt)}</p>
 
                 <div className="session-title-actions">
                     {quickTakeText && (
@@ -150,7 +156,7 @@ export default function StoredSessionView({
 
             {/* Follow-Up Chat */}
             <FollowUpChat
-                sessionId={session.id}
+                sessionId={sessionId}
                 messages={followupMessages}
                 onNewMessage={handleNewMessage}
                 token={token}

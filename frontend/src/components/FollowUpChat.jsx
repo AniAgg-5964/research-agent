@@ -4,7 +4,8 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import { FiSend, FiSearch } from "react-icons/fi";
 
-const SESSION_API = "http://localhost:5000/api/session";
+const BACKEND_URL = import.meta.env.VITE_API_BASE || "http://localhost:5000";
+const SESSION_API = `${BACKEND_URL}/api/session`;
 
 export default function FollowUpChat({ sessionId, messages, onNewMessage, token }) {
     const [input, setInput] = useState("");

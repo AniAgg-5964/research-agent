@@ -9,17 +9,26 @@ import ReportViewer from "./components/ReportViewer";
 import NotesPanel from "./components/NotesPanel";
 import SessionSidebar from "./components/SessionSidebar";
 import StoredSessionView from "./components/StoredSessionView";
-import { FiCpu, FiMessageSquare, FiLogOut, FiUser, FiDatabase, FiZap } from "react-icons/fi";
+import ReactMarkdown from "react-markdown";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import { FiCpu, FiMessageSquare, FiLogOut, FiUser, FiDatabase, FiZap, FiFileText, FiEdit2 } from "react-icons/fi";
 
-const API_BASE = "http://localhost:5000/research";
-const SESSION_API = "http://localhost:5000/api/session";
+const BACKEND_URL = import.meta.env.VITE_API_BASE || "http://localhost:5000";
+const API_BASE = `${BACKEND_URL}/research`;
+const SESSION_API = `${BACKEND_URL}/api/session`;
 
 function ResearchWorkspace() {
     const navigate = useNavigate();
     const { sessionId: routeSessionId } = useParams();
 
     // User profile
-    const storedUser = JSON.parse(localStorage.getItem("user") || "null");
+    let storedUser = null;
+    try {
+        storedUser = JSON.parse(localStorage.getItem("user") || "null");
+    } catch (e) {
+        console.error("Failed to parse stored user from localStorage:", e);
+    }
     const token = localStorage.getItem("token");
     const [profileOpen, setProfileOpen] = useState(false);
 
@@ -45,6 +54,7 @@ function ResearchWorkspace() {
     const [sessionLoading, setSessionLoading] = useState(false);
     const [activeSession, setActiveSession] = useState(null);
     const loadingSessionRef = useRef(null);
+    const activeSessionIdRef = useRef(null);
 
     // ==================
     // Core state
@@ -98,10 +108,9 @@ function ResearchWorkspace() {
     }, [token]);
 
     useEffect(() => {
-        if (token && routeSessionId && routeSessionId !== activeSessionId) {
+        if (token && routeSessionId && routeSessionId !== activeSessionIdRef.current) {
             handleSelectSession(routeSessionId);
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token, routeSessionId]);
 
     const fetchSessions = async () => {
@@ -120,6 +129,7 @@ function ResearchWorkspace() {
     // Session management
     // ==================
     const handleNewSession = () => {
+        activeSessionIdRef.current = null;
         setActiveSessionId(null);
         setActiveSession(null);
         setSessionMessages([]);
@@ -152,9 +162,11 @@ function ResearchWorkspace() {
     };
 
     const handleSelectSession = async (sessionId) => {
+        if (!sessionId) return;
         // Prevent duplicate concurrent fetches
         if (loadingSessionRef.current === sessionId) return;
         loadingSessionRef.current = sessionId;
+        activeSessionIdRef.current = sessionId;
 
         if (routeSessionId !== sessionId) {
             navigate(`/workspace/${sessionId}`);
@@ -278,9 +290,8 @@ function ResearchWorkspace() {
                 body: JSON.stringify({ query: queryText }),
             });
             const data = await res.json();
-            setActiveSessionId(data.id);
-            navigate(`/workspace/${data.id}`);
-            await fetchSessions();
+            activeSessionIdRef.current = data.id;
+            fetchSessions();
             return data.id;
         } catch (err) {
             console.error("Failed to create session:", err);
@@ -325,7 +336,7 @@ function ResearchWorkspace() {
         try {
             const res = await fetch(API_BASE, {
                 method: "POST",
-                headers: { "Content-Type": "application/json" },
+                headers: authHeaders,
                 body: JSON.stringify({
                     query: finalQuery,
                     mode,
@@ -393,10 +404,12 @@ function ResearchWorkspace() {
             setReasoning(data.reasoning || null);
             setMemoryCount(data.memoryCount !== undefined ? data.memoryCount : null);
 
-            // Store assistant message
+            // Store assistant message and update local session state
             if (currentSessionId && reportText && !data.error) {
                 await storeMessage(currentSessionId, "assistant", reportText);
                 setSessionMessages(prev => [...prev, { role: "assistant", content: reportText, timestamp: new Date().toISOString() }]);
+                setActiveSession(prev => prev ? { ...prev, report: reportText } : null);
+                fetchSessions();
             }
 
             // Generate Quick Take & persist to session
@@ -405,7 +418,7 @@ function ResearchWorkspace() {
                 try {
                     const qtRes = await fetch(`${API_BASE}/quick-take`, {
                         method: "POST",
-                        headers: { "Content-Type": "application/json" },
+                        headers: authHeaders,
                         body: JSON.stringify({ reportText }),
                     });
                     const qtData = await qtRes.json();
@@ -414,6 +427,7 @@ function ResearchWorkspace() {
 
                     // Persist quickTake to session
                     if (currentSessionId && qt) {
+                        setActiveSession(prev => prev ? { ...prev, quickTake: qt } : null);
                         try {
                             await fetch(`${SESSION_API}/${currentSessionId}/summary`, {
                                 method: "PUT",
@@ -474,7 +488,7 @@ function ResearchWorkspace() {
             try {
                 const res = await fetch(`${API_BASE}/transform`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: authHeaders,
                     body: JSON.stringify({ text: response, action }),
                 });
                 const data = await res.json();
@@ -483,13 +497,13 @@ function ResearchWorkspace() {
                 if (resText) {
                     savePendingTransform({ type: "full", action, result: resText });
                 }
-            } catch {
-                console.error("Transform failed");
+            } catch (err) {
+                console.error("Transform failed:", err);
             }
 
             setActionLoading(false);
         },
-        [response, activeSessionId]
+        [response, activeSessionId, token]
     );
 
     const acceptTransform = async () => {
@@ -501,8 +515,9 @@ function ResearchWorkspace() {
             setActiveAction("");
             savePendingTransform(null);
 
-            // Persist report edits
+            // Persist report edits to active state & DB
             if (activeSessionId) {
+                setActiveSession(prev => prev ? { ...prev, report: newReport } : null);
                 try {
                     await fetch(`${SESSION_API}/${activeSessionId}/report`, {
                         method: "PUT",
@@ -533,7 +548,7 @@ function ResearchWorkspace() {
             try {
                 const res = await fetch(`${API_BASE}/transform`, {
                     method: "POST",
-                    headers: { "Content-Type": "application/json" },
+                    headers: authHeaders,
                     body: JSON.stringify({ text: selectedText, action, instruction }),
                 });
                 const data = await res.json();
@@ -542,13 +557,13 @@ function ResearchWorkspace() {
                 if (resText) {
                     savePendingTransform({ type: "selection", action, source: selectedText, result: resText });
                 }
-            } catch {
-                console.error("Selection transform failed");
+            } catch (err) {
+                console.error("Selection transform failed:", err);
             }
 
             setActionLoading(false);
         },
-        [activeSessionId]
+        [activeSessionId, token]
     );
 
     // ==================
@@ -578,8 +593,9 @@ function ResearchWorkspace() {
             setSelectionSource("");
             savePendingTransform(null);
 
-            // Persist report edits
+            // Persist report edits to active state & DB
             if (activeSessionId) {
+                setActiveSession(prev => prev ? { ...prev, report: updated } : null);
                 try {
                     await fetch(`${SESSION_API}/${activeSessionId}/report`, {
                         method: "PUT",
@@ -884,8 +900,18 @@ function ResearchWorkspace() {
                             </div>
                         )}
 
-                        {/* ---- Pipeline Progress ---- */}
-                        <PipelineProgress active={loading} steps={pipelineSteps} paused={clarificationNeeded} />
+                        {/* ---- Pipeline Progress (Deep Mode) ---- */}
+                        {mode === "deep" && (
+                            <PipelineProgress active={loading} steps={pipelineSteps} paused={clarificationNeeded} />
+                        )}
+
+                        {/* ---- Quick Mode Loading ---- */}
+                        {mode === "quick" && loading && (
+                            <div className="quick-mode-loading">
+                                <div className="quick-loading-spinner" />
+                                <span>Analyzing your query...</span>
+                            </div>
+                        )}
 
                         {/* ---- Quick Take Loading ---- */}
                         {quickTakeLoading && !loading && (
@@ -936,6 +962,39 @@ function ResearchWorkspace() {
                             onViewFullReport={() => setReportOpen(true)}
                             onExport={handleExport}
                         />
+
+                        {/* ---- Direct Research Report Display ---- */}
+                        {response && !loading && (
+                            <div className="report-inline-card">
+                                <div className="report-inline-header">
+                                    <div className="report-inline-title">
+                                        <FiFileText className="inline-icon" />
+                                        <h3>Generated Research Findings</h3>
+                                    </div>
+                                    <div className="report-inline-actions">
+                                        <button
+                                            className="btn-ghost btn-sm"
+                                            onClick={() => setReportOpen(true)}
+                                            id="open-report-focus-btn"
+                                        >
+                                            <FiEdit2 className="inline-icon" /> Focus & Transform
+                                        </button>
+                                        <button
+                                            className="btn-ghost btn-sm"
+                                            onClick={() => handleExport("report")}
+                                            id="export-inline-report-btn"
+                                        >
+                                            <FiFileText className="inline-icon" /> Export PDF
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="report-inline-body">
+                                    <ReactMarkdown remarkPlugins={[remarkMath]} rehypePlugins={[rehypeKatex]}>
+                                        {response}
+                                    </ReactMarkdown>
+                                </div>
+                            </div>
+                        )}
 
                         {/* ---- Full Report Modal ---- */}
                         <ReportViewer

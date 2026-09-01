@@ -2,7 +2,8 @@ import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import "./Auth.css";
 
-const API_BASE = "http://localhost:5000/api/auth";
+const BACKEND_URL = import.meta.env.VITE_API_BASE || "http://localhost:5000";
+const API_BASE = `${BACKEND_URL}/api/auth`;
 
 export default function Signup() {
     const navigate = useNavigate();

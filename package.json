@@ -20,7 +20,7 @@
   "homepage": "https://github.com/AniAgg-5964/research-agent#readme",
   "dependencies": {
     "@google/genai": "^1.42.0",
-    "@qdrant/js-client-rest": "^1.17.0",
+    "@qdrant/js-client-rest": "^1.19.0",
     "arxiv": "^0.0.4",
     "axios": "^1.13.5",
     "bcryptjs": "^3.0.3",
